@@ -1,4 +1,4 @@
-These are generic image analysis scripts that I (<a href="https://github.com/ryn-thorn">Ryn Thorn</a>) have written, collected, 
+These are generic image analysis scripts that I have written, collected, 
 and otherwise given cobbled-together life to through much trial and error during my time 
 at MUSC in the BRIDGE Lab. Versions of these scripts can be found in various studies' 
 "STUDY_code" BIDS folders. These are here as a long/reference do the most basic, generic 
