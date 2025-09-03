@@ -1,6 +1,6 @@
 
-base = '/Volumes/vdrive/helpern_users/benitez_a/PUMA/PUMA_Analysis/Imaging_Analysis/lst/02_Data'
-subj = {'M142'}
+base = '/Volumes/Analysis/Imaging_Analysis/lst/02_Data' %path to raw struc data
+subj = {'M142'} %subject IDs
 
 for i=1:length(subj)
     clear matlabbatch
