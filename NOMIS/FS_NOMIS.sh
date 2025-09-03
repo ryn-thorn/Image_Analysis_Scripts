@@ -4,14 +4,14 @@
 #
 #######################################
 # To run this script: 
-# ./FS_NOMIS.sh --input /base/derivatives/freesurfer --csv /path/to/PUMA_norms.csv --nomis /path/to/NOMIS.py --output /base/derivatives/nomis
+# ./FS_NOMIS.sh --base /base/derivatives/freesurfer --csv /path/to/PUMA_norms.csv --nomis /path/to/NOMIS.py --output /base/derivatives/nomis --env [name of nomis conda env]
 #######################################
 
 set -euo pipefail
 
 # --- Functions ---
 usage() {
-    echo "Usage: $0 --input /path/to/freesurfer_data --csv norms.csv --nomis /path/to/NOMIS.py --output /path/to/nomis_output [--subjects sub-001 sub-002 ...]"
+    echo "Usage: $0 --base /path/to/freesurfer_subjects --csv norms.csv --output /path/to/output --nomis /path/to/NOMIS.py [--env conda_env]"
     exit 1
 }
 
@@ -24,33 +24,33 @@ check_dep() {
     command -v "$1" >/dev/null 2>&1 || error_exit "Required dependency '$1' not found in PATH."
 }
 
-# --- Defaults ---
+# --- Required arguments ---
 BASE=""
 CSV=""
 OUTROOT=""
 NOMIS_SCRIPT=""
-SUBJECTS=()
+CONDA_ENV="nomis"   # default
 
 # --- Parse arguments ---
-INPUT=""
-CSV=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --input) INPUT="$2"; shift 2;;
+        --base) BASE="$2"; shift 2;;
         --csv) CSV="$2"; shift 2;;
-        --nomis) NOMIS_SCRIPT="$2"; shift 2;;
-        --subjects) shift; while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do SUBJECTS+=("$1"); shift; done;;
         --output) OUTROOT="$2"; shift 2;;
+        --nomis) NOMIS_SCRIPT="$2"; shift 2;;
+        --env) CONDA_ENV="$2"; shift 2;;
         -h|--help) usage;;
         *) echo "Unknown argument: $1"; usage;;
     esac
 done
 
-[[ -z "$INPUT" ]] && usage
+# --- Validate required args ---
+[[ -z "$BASE" ]] && usage
 [[ -z "$CSV" ]] && usage
-[[ -z "$NOMIS_SCRIPT" ]] && usage
 [[ -z "$OUTROOT" ]] && usage
-[[ ! -d "$INPUT" ]] && error_exit "Input directory '$INPUT' not found."
+[[ -z "$NOMIS_SCRIPT" ]] && usage
+
+[[ ! -d "$BASE" ]] && error_exit "Base directory '$BASE' not found."
 [[ ! -f "$CSV" ]] && error_exit "CSV file '$CSV' not found."
 [[ ! -f "$NOMIS_SCRIPT" ]] && error_exit "NOMIS script '$NOMIS_SCRIPT' not found."
 mkdir -p "$OUTROOT"
@@ -60,43 +60,35 @@ LOGFILE="$OUTROOT/FS_NOMIS.log"
 exec > >(tee -a "$LOGFILE") 2>&1
 echo "#######################################" >> "$LOGFILE"
 echo "Run started: $(date)" >> "$LOGFILE"
-echo "Input: $INPUT" >> "$LOGFILE"
+echo "Base (Freesurfer SUBJECTS_DIR): $BASE" >> "$LOGFILE"
 echo "CSV: $CSV" >> "$LOGFILE"
 echo "Output: $OUTROOT" >> "$LOGFILE"
 echo "NOMIS script: $NOMIS_SCRIPT" >> "$LOGFILE"
-echo "Subjects: ${SUBJECTS[*]:-ALL}" >> "$LOGFILE"
+echo "Conda env: $CONDA_ENV" >> "$LOGFILE"
 echo "#######################################" >> "$LOGFILE"
 
+# --- Initialize conda (for non-interactive shells) ---
+if [[ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]]; then
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+elif [[ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]]; then
+    source "$HOME/anaconda3/etc/profile.d/conda.sh"
+elif [[ -f "/opt/miniconda3/etc/profile.d/conda.sh" ]]; then
+    source "/opt/miniconda3/etc/profile.d/conda.sh"
+elif [[ -f "/opt/anaconda3/etc/profile.d/conda.sh" ]]; then
+    source "/opt/anaconda3/etc/profile.d/conda.sh"
+else
+    echo "ERROR: Could not find conda.sh. Please update FS_NOMIS.sh with your Conda install path." >&2
+    exit 1
+fi
+
 # --- Dependency checks ---
-check_dep recon-all
 check_dep conda
 check_dep python
 
-# --- Subject list ---
-if [[ ${#SUBJECTS[@]} -eq 0 ]]; then
-    SUBJECTS=($(ls "$INPUT"))
-fi
-
-# --- Process subjects ---
-for subj in "${SUBJECTS[@]}"; do
-    echo -e "\033[1;36mProcessing subject: $subj\033[0m"
-
-    subj_dir="$INPUT/$subj"
-    t1="$subj_dir/${subj}_T1.nii"
-
-    [[ ! -d "$subj_dir" ]] && error_exit "Subject directory $subj_dir missing."
-    [[ ! -f "$t1" ]] && error_exit "Missing T1 file: $t1"
-
-    recon-all -all -i "$t1" -sd "$subj_dir" -subjid "$subj"
-
-    cp -r "$subj_dir/$subj" "$OUTROOT/"
-    rm -rf "$subj_dir/fslaverage"
-done
-
 # --- Run NOMIS ---
-echo "Running NOMIS..."
-conda activate nomis || error_exit "Could not activate conda env 'nomis'"
-python "$NOMIS_SCRIPT" -csv "$CSV" -s "$OUTROOT" -o "$OUTROOT"
+echo "Running NOMIS in conda env: $CONDA_ENV ..."
+conda activate "$CONDA_ENV" || error_exit "Could not activate conda env '$CONDA_ENV'"
+python "$NOMIS_SCRIPT" -csv "$CSV" -s "$BASE" -o "$OUTROOT"
 
 echo -e "\033[1;32mFS_NOMIS pipeline completed!\033[0m"
 echo "Run completed: $(date)" >> "$LOGFILE"
