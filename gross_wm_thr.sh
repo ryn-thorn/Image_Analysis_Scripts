@@ -6,8 +6,6 @@
 #
 #######################################################
 
-
-
 if [ "$#" -ne 3 ]; then
     echo "Usage: $0 <base_dir> <out_dir> <csv_output>"
     exit 1
