@@ -88,7 +88,7 @@ Centiloid Processing:
 MRS T1 Mask Conversion:
 
 <pre><code>
-    python MRS_T1_Mask.py <mrs_complex_nifti> <t1_nifti> <output_mask> 
+    python MRS_T1_Mask.py mrs_complex_nifti t1_nifti output_mask>
 </code></pre>
 
 <h2>Miscellaneous</h2>
