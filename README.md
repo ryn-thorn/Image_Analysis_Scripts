@@ -8,3 +8,11 @@ www.bridge-lab.org</br>
 www.bridgelab.info</br>
 
 <img src="https://www.bridge-lab.org/storage/329/9f17e7e8-434b-4d67-85f7-bc57bcd496cc/bridge-logo.png">
+
+<h2>Script Documentation</h><br>
+<br>
+<br>
+<h3>Preprocessing</h><br>
+<br>
+Standard PyDesigner processing: /path/to/pyd_preproc.sh --base /path/to/BIDS_folder<br>
+<br>
