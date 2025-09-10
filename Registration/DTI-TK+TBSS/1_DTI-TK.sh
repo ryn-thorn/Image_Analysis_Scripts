@@ -3,7 +3,7 @@
 # Prepares DTI-TK input tensors and performs group registration
 #
 # Example usage:
-#   ./1_DTI-TK_Registration.sh \
+#   ./1_DTI-TK.sh \
 #       --input /path/to/dki_pydesigner \
 #       --output /path/to/dti-tk \
 #       --subjects sub-101 sub-104 sub-110 \

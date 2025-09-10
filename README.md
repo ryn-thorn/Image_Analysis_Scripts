@@ -19,9 +19,31 @@ Standard PyDesigner processing:
 
 <h2>Registration</h2>
 
-Standard PyDesigner processing: 
+Integrated DTI-TK and TBSS with optional ROI Analysis: 
 
-<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
+<pre><code>
+# 1_DTI-TK.sh
+   /path/to/1_DTI-TK.sh \
+      --input /path/to/dki_pydesigner \
+      --output /path/to/dti-tk \
+      --subjects sub-101 sub-104 sub-110 \
+      --bet-thr 0.25
+</code></pre>
+      
+<pre><code>
+# 2_TBSS.sh
+   /path/to//2_TBSS.sh \
+      --input /path/to/derivatives/dti-tk \
+      --output /path/to/derivatives/tbss \
+      --subjects sub-101 sub-104 sub-110 \
+      --wmmets    
+</code></pre>
+
+<pre><code>
+# 3_Stats.sh
+   /path/to//3_StatsS.sh \
+      coming soon!    
+</code></pre>
 
 <h2>Segmentation</h2>
 
