@@ -9,11 +9,40 @@ www.bridgelab.info</br>
 
 <img src="https://www.bridge-lab.org/storage/329/9f17e7e8-434b-4d67-85f7-bc57bcd496cc/bridge-logo.png">
 
-<h2>Script Documentation</h2>
+<h1>Script Documentation</h1>
 
-<h3>Preprocessing</h3>
+<h2>Preprocessing</h2>
 
 Standard PyDesigner processing: 
 
-<pre><code>// /path/to/pyd_preproc.sh --base /path/to/BIDS_folder</script></code></pre>
+<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
 
+<h2>Registration</h2>
+
+Standard PyDesigner processing: 
+
+<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
+
+<h2>Segmentation</h2>
+
+Standard PyDesigner processing: 
+
+<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
+
+<h2>Native Space Analysis</h2>
+
+Standard PyDesigner processing: 
+
+<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
+
+<h2>PET and MRS</h2>
+
+Standard PyDesigner processing: 
+
+<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
+
+<h2>Miscellaneous</h2>
+
+Standard PyDesigner processing: 
+
+<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
