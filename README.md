@@ -70,9 +70,7 @@ NOMIS Normalization:
 Lesion Segmentation Tool: 
 
 <pre><code>
-    /path/to/run_lst.sh \
-       /path/to/raw_data_ \
-       /path/to/Outputs \
+    /path/to/run_lst.sh /path/to/raw_data_ /path/to/Outputs 
 </code></pre>
 
 <h2>Native Space Analysis</h2>
@@ -80,13 +78,8 @@ Lesion Segmentation Tool:
 Gross White Matter Estimation: 
 
 <pre><code>
-    /path/to/gross_wm_thr.sh \
-       /path/to/base_dir \
-       /path/to/out_dir \
-       /path/to/output.csv \
+    /path/to/gross_wm_thr.sh /path/to/base_dir /path/to/out_dir /path/to/output.csv 
 </code></pre>
-
-
 
 <h2>PET and MRS</h2>
 
@@ -94,7 +87,15 @@ Centiloid Processing:
 
 MRS T1 Mask Conversion:
 
+<pre><code>
+    python MRS_T1_Mask.py <mrs_complex_nifti> <t1_nifti> <output_mask> 
+</code></pre>
+
 <h2>Miscellaneous</h2>
 
 Converting a complex NiFTi to a FLOAT23 NiFTi: 
+
+<pre><code>
+    python convert_complex_to_float.py input.nii output.nii
+</code></pre>
 
