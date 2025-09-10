@@ -69,11 +69,23 @@ NOMIS Normalization:
 
 Lesion Segmentation Tool: 
 
-Requires manual updating of the script
+<pre><code>
+    /path/to/run_lst.sh \
+       /path/to/raw_data_ \
+       /path/to/Outputs \
+</code></pre>
 
 <h2>Native Space Analysis</h2>
 
 Gross White Matter Estimation: 
+
+<pre><code>
+    /path/to/gross_wm_thr.sh \
+       /path/to/base_dir \
+       /path/to/out_dir \
+       /path/to/output.csv \
+</code></pre>
+
 
 
 <h2>PET and MRS</h2>
