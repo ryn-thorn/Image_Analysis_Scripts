@@ -13,5 +13,7 @@ www.bridgelab.info</br>
 
 <h3>Preprocessing</h3>
 
-<p>Standard PyDesigner processing: /path/to/pyd_preproc.sh --base /path/to/BIDS_folder</p><br>
+Standard PyDesigner processing: 
+
+<script>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</script>
 
