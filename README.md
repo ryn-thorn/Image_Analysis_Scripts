@@ -47,24 +47,42 @@ Integrated DTI-TK and TBSS with optional ROI Analysis:
 
 <h2>Segmentation</h2>
 
-Standard PyDesigner processing: 
+Freesurfer recon-all -all Segmentation: 
 
-<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
+<pre><code>
+    /path/to/freesurfer-reconall.sh \
+       --input /path/to/T1s \
+       --output /path/to/freesurfer_output \
+       --subjects A001 A002 A003
+</code></pre>
+
+NOMIS Normalization: 
+
+<pre><code>
+    /path/to/FS_NOMIS.sh \
+       --base /base/derivatives/freesurfer \
+       --csv /path/to/PUMA_norms.csv \
+       --nomis /path/to/NOMIS.py \
+       --output /base/derivatives/nomis \
+       --env [name of nomis conda env]
+</code></pre>
+
+Lesion Segmentation Tool: 
+
+Requires manual updating of the script
 
 <h2>Native Space Analysis</h2>
 
-Standard PyDesigner processing: 
+Gross White Matter Estimation: 
 
-<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
 
 <h2>PET and MRS</h2>
 
-Standard PyDesigner processing: 
+Centiloid Processing: 
 
-<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
+MRS T1 Mask Conversion:
 
 <h2>Miscellaneous</h2>
 
-Standard PyDesigner processing: 
+Converting a complex NiFTi to a FLOAT23 NiFTi: 
 
-<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
