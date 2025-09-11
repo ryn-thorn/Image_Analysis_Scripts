@@ -80,6 +80,10 @@ Lesion Segmentation Tool:
 
 <h2>Native Space Analysis</h2>
 
+TractSeg: 
+
+Requires manual script edits at the moment; automation coming soon.
+
 Gross White Matter Estimation: 
 
 <pre><code>
