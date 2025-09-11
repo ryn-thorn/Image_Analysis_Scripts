@@ -17,6 +17,11 @@ Standard PyDesigner processing:
 
 <pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
 
+ViSTa processing: 
+
+<pre><code>python /path/tovista.py \
+    /path/to/vista.nii /path/to/reference.nii /path/to/output/</code></pre>
+
 <h2>Registration</h2>
 
 Integrated DTI-TK and TBSS with optional ROI Analysis: 
