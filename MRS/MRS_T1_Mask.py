@@ -1,97 +1,96 @@
 #!/usr/bin/env python3
 """
-Full pipeline: Convert a complex MRS voxel NIfTI to a T1-aligned mask.
+Create a rotated MRS voxel mask in T1 space + PNG overlay check.
 
-Usage:
-    python MRS_T1_Mask.py <mrs_complex_nifti> <t1_nifti> <output_mask>
+Example usage:
+    ./MRS_T1_Mask.py \
+        --t1 T1w.nii.gz \
+        --mrs MRS_voxel.nii.gz \
+        --out MRS_T1_mask.nii.gz
 """
 
-import sys
-import nibabel as nib
+import argparse
 import numpy as np
-import subprocess
-import shutil
+import nibabel as nib
+import matplotlib.pyplot as plt
+import os
 
-def complex_to_float_magnitude(mrs_file):
-    """Convert DT=1792 complex NIfTI to float magnitude in memory."""
-    img = nib.load(mrs_file)
-    data = img.get_fdata(dtype=np.complex128)
-    mag = np.abs(data)
-    return mag, img
+def create_mrs_mask(t1_file, mrs_file, out_file, tol=1e-6):
+    # Load images
+    t1 = nib.load(t1_file)
+    t1_data = t1.get_fdata()
+    t1_affine = t1.affine
+    t1_shape = t1.shape
 
-def create_t1_mask(mag_data, mrs_img, t1_img):
-    """Project the MRS voxel onto T1 space as a binary mask."""
-    t1_data = np.zeros(t1_img.shape, dtype=np.uint8)
-    t1_affine = t1_img.affine
-    t1_voxel_size = np.array(t1_img.header.get_zooms())
-    mrs_voxel_size = np.array(mrs_img.header.get_zooms()[:3])
+    mrs = nib.load(mrs_file)
+    mrs_affine = mrs.affine
 
-    # Compute MRS voxel center in world coordinates
-    mrs_origin_mm = nib.affines.apply_affine(mrs_img.affine, [0, 0, 0])
-    mrs_center_mm = mrs_origin_mm + mrs_voxel_size / 2
+    # Precompute inverse affine: world -> MRS voxel indices
+    inv_mrs_affine = np.linalg.inv(mrs_affine)
 
-    # Compute half-width in T1 voxels
-    half_width_vox = np.ceil((mrs_voxel_size / 2) / t1_voxel_size).astype(int)
+    # Define bounds in MRS index space (center origin)
+    lo, hi = -0.5 - tol, 0.5 + tol
 
-    # Convert center to T1 voxel coordinates
-    t1_center_vox = np.round(np.linalg.inv(t1_affine) @ np.append(mrs_center_mm, 1))[:3].astype(int)
+    # Build mask
+    i, j, k = np.indices(t1_shape)
+    nvox = i.size
+    ijk = np.vstack([i.ravel(), j.ravel(), k.ravel(), np.ones(nvox)])
 
-    # Compute voxel ranges and clip to T1 bounds
-    x0, y0, z0 = np.maximum(t1_center_vox - half_width_vox, 0)
-    x1, y1, z1 = np.minimum(t1_center_vox + half_width_vox + 1, t1_data.shape)
+    world = t1_affine @ ijk
+    mrs_idx = inv_mrs_affine @ world
+    mrs_idx_xyz = mrs_idx[:3, :]
 
-    # Fill mask
-    t1_data[x0:x1, y0:y1, z0:z1] = 1
+    inside_mask = (
+        (mrs_idx_xyz[0, :] >= lo) & (mrs_idx_xyz[0, :] <= hi) &
+        (mrs_idx_xyz[1, :] >= lo) & (mrs_idx_xyz[1, :] <= hi) &
+        (mrs_idx_xyz[2, :] >= lo) & (mrs_idx_xyz[2, :] <= hi)
+    )
 
-    # Save mask as .nii.gz
-    temp_output = "temp_mask.nii.gz"
-    mask_img = nib.Nifti1Image(t1_data, t1_affine)
-    mask_img.set_data_dtype(np.uint8)
+    mask = inside_mask.reshape(t1_shape).astype(np.uint8)
+    mask_img = nib.Nifti1Image(mask, t1_affine)
+    nib.save(mask_img, out_file)
 
-    # Set header fields for FSLeyes
-    mask_img.header['cal_min'] = t1_data.min()
-    mask_img.header['cal_max'] = t1_data.max()
-    mask_img.header.set_xyzt_units('mm', 'sec')
-    mask_img.header['descrip'] = b''
+    print(f"[✓] Saved rotated MRS mask to: {out_file}")
+    print(f"    Mask voxels (count): {int(mask.sum())}")
 
-    # Safe sform/qform handling
-    sform = t1_img.get_sform()
-    if sform is None:
-        sform = np.eye(4)
-    qform = t1_img.get_qform()
-    if qform is None:
-        qform = np.eye(4)
+    # Make overlay PNG
+    preview_file = os.path.splitext(out_file)[0] + "_overlay.png"
+    mid_slices = [s // 2 for s in mask.shape]
 
-    mask_img.set_sform(sform, code=1)
-    mask_img.set_qform(qform, code=1)
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    cmap_mask = plt.cm.get_cmap("autumn", 2)
 
-    nib.save(mask_img, temp_output)
+    # Sagittal
+    axes[0].imshow(np.rot90(t1_data[mid_slices[0], :, :]), cmap="gray")
+    axes[0].imshow(np.rot90(mask[mid_slices[0], :, :]), cmap=cmap_mask, alpha=0.5)
+    axes[0].set_title("Sagittal")
 
-    return temp_output
+    # Coronal
+    axes[1].imshow(np.rot90(t1_data[:, mid_slices[1], :]), cmap="gray")
+    axes[1].imshow(np.rot90(mask[:, mid_slices[1], :]), cmap=cmap_mask, alpha=0.5)
+    axes[1].set_title("Coronal")
+
+    # Axial
+    axes[2].imshow(np.rot90(t1_data[:, :, mid_slices[2]]), cmap="gray")
+    axes[2].imshow(np.rot90(mask[:, :, mid_slices[2]]), cmap=cmap_mask, alpha=0.5)
+    axes[2].set_title("Axial")
+
+    for ax in axes:
+        ax.axis("off")
+
+    plt.tight_layout()
+    plt.savefig(preview_file, dpi=150)
+    plt.close()
+    print(f"[✓] Preview overlay saved to: {preview_file}")
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        print(__doc__)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Create rotated MRS voxel mask in T1 space (center origin)."
+    )
+    parser.add_argument("--t1", required=True, help="Path to T1 NIfTI image")
+    parser.add_argument("--mrs", required=True, help="Path to MRS reference NIfTI")
+    parser.add_argument("--out", required=True, help="Output mask NIfTI filename")
 
-    mrs_file = sys.argv[1]
-    t1_file = sys.argv[2]
-    output_mask = sys.argv[3]
-
-    # Ensure output uses .nii.gz extension
-    if not output_mask.endswith(".nii.gz"):
-        output_mask += ".nii.gz"
-
-    # Step 1: Convert complex -> float magnitude
-    mag_data, mrs_img = complex_to_float_magnitude(mrs_file)
-
-    # Step 2: Load T1
-    t1_img = nib.load(t1_file)
-
-    # Step 3: Create T1-aligned mask
-    temp_mask_file = create_t1_mask(mag_data, mrs_img, t1_img)
-
-    # Step 4: Move to desired output
-    shutil.move(temp_mask_file, output_mask)
-    print(f"T1-aligned MRS mask saved to: {output_mask}")
-
+    args = parser.parse_args()
+    create_mrs_mask(args.t1, args.mrs, args.out)
