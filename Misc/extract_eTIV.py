@@ -1,4 +1,9 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+#####################################
+#
+# python extract_eTIV.py /path/to/Main_folder eTIV_values.csv
+#
+#####################################
 import os
 import glob
 import csv
