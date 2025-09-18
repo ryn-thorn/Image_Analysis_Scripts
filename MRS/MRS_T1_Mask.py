@@ -53,35 +53,35 @@ def create_mrs_mask(t1_file, mrs_file, out_file, tol=1e-6):
     print(f"[✓] Saved rotated MRS mask to: {out_file}")
     print(f"    Mask voxels (count): {int(mask.sum())}")
 
-    # Make overlay PNG
-    preview_file = os.path.splitext(out_file)[0] + "_overlay.png"
-    mid_slices = [s // 2 for s in mask.shape]
-
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-    cmap_mask = plt.cm.get_cmap("autumn", 2)
-
-    # Sagittal
-    axes[0].imshow(np.rot90(t1_data[mid_slices[0], :, :]), cmap="gray")
-    axes[0].imshow(np.rot90(mask[mid_slices[0], :, :]), cmap=cmap_mask, alpha=0.5)
-    axes[0].set_title("Sagittal")
-
-    # Coronal
-    axes[1].imshow(np.rot90(t1_data[:, mid_slices[1], :]), cmap="gray")
-    axes[1].imshow(np.rot90(mask[:, mid_slices[1], :]), cmap=cmap_mask, alpha=0.5)
-    axes[1].set_title("Coronal")
-
-    # Axial
-    axes[2].imshow(np.rot90(t1_data[:, :, mid_slices[2]]), cmap="gray")
-    axes[2].imshow(np.rot90(mask[:, :, mid_slices[2]]), cmap=cmap_mask, alpha=0.5)
-    axes[2].set_title("Axial")
-
-    for ax in axes:
-        ax.axis("off")
-
-    plt.tight_layout()
-    plt.savefig(preview_file, dpi=150)
-    plt.close()
-    print(f"[✓] Preview overlay saved to: {preview_file}")
+#     # Make overlay PNG
+#     preview_file = os.path.splitext(out_file)[0] + "_overlay.png"
+#     mid_slices = [s // 2 for s in mask.shape]
+# 
+#     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+#     cmap_mask = plt.cm.get_cmap("autumn", 2)
+# 
+#     # Sagittal
+#     axes[0].imshow(np.rot90(t1_data[mid_slices[0], :, :]), cmap="gray")
+#     axes[0].imshow(np.rot90(mask[mid_slices[0], :, :]), cmap=cmap_mask, alpha=0.5)
+#     axes[0].set_title("Sagittal")
+# 
+#     # Coronal
+#     axes[1].imshow(np.rot90(t1_data[:, mid_slices[1], :]), cmap="gray")
+#     axes[1].imshow(np.rot90(mask[:, mid_slices[1], :]), cmap=cmap_mask, alpha=0.5)
+#     axes[1].set_title("Coronal")
+# 
+#     # Axial
+#     axes[2].imshow(np.rot90(t1_data[:, :, mid_slices[2]]), cmap="gray")
+#     axes[2].imshow(np.rot90(mask[:, :, mid_slices[2]]), cmap=cmap_mask, alpha=0.5)
+#     axes[2].set_title("Axial")
+# 
+#     for ax in axes:
+#         ax.axis("off")
+# 
+#     plt.tight_layout()
+#     plt.savefig(preview_file, dpi=150)
+#     plt.close()
+#     print(f"[✓] Preview overlay saved to: {preview_file}")
 
 
 if __name__ == "__main__":
