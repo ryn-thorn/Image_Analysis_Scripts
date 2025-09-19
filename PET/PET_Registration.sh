@@ -51,8 +51,17 @@ process_subject() {
 export -f process_subject
 export fs out suv rois
 
+# ---- Build subject list from $suv ----
+subjects=$(
+  for d in "$suv"/*/; do
+    subj=$(basename "$d" | sed 's/^IAM_//')
+    # Require SUV.nii to exist, and skip if $out/subj already exists
+    if [[ -f "$suv/IAM_${subj}/SUV.nii" && ! -d "$out/${subj}" ]]; then
+      echo "$subj"
+    fi
+  done
+)
+
 # ---- Run in parallel ----
-# Adjust -j for number of CPU cores (e.g. -j 4, -j 6, etc.)
-subjects="1166 1167"
 parallel -j 4 process_subject ::: $subjects
 
