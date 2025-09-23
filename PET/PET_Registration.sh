@@ -40,6 +40,7 @@ process_subject() {
         -dof 6 -applyxfm
 
     fslmaths "$out/${i}/SUV_reg.nii.gz" -thr 0 "$out/${i}/SUV_reg_thr.nii.gz"
+    mv -f "$out/${i}/SUV_reg_thr.nii.gz" "$out/${i}/SUV_reg.nii.gz"
 
     # ---- ROI extraction ----
     fsmakeroi -o "$out/${i}" "$fs/IAM_${i}/mri/aparc+aseg.mgz" "$rois"
