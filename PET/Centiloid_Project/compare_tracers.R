@@ -6,7 +6,7 @@ library(patchwork)
 # -----------------------------
 # 1. Load your data
 # -----------------------------
-data_file <- "/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/pet_suv/centiloid_results_both_tracers.csv"
+data_file <- "/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/centiloid_results_both_tracers.csv"
 df <- read.csv(data_file, stringsAsFactors = TRUE)
 
 # -----------------------------
@@ -101,6 +101,6 @@ p2 <- ggplot(df, aes(x=Tracer, y=Centiloid, color=Tracer)) +
 combined_plot <- p1 + p2 + plot_layout(ncol=2)
 print(combined_plot)
 
-ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/pet_suv/centiloid_project/MeanSUVR_by_Tracer.pdf", p1, width=6, height=5)
-ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/pet_suv/centiloid_project/Centiloid_by_Tracer.pdf", p2, width=6, height=5)
-ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/pet_suv/centiloid_project/Combined_SUVR_Centiloid.pdf", combined_plot, width=12, height=5)
+ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/MeanSUVR_by_Tracer.pdf", p1, width=6, height=5)
+ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/Centiloid_by_Tracer.pdf", p2, width=6, height=5)
+ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/Combined_SUVR_Centiloid.pdf", combined_plot, width=12, height=5)

@@ -1,7 +1,7 @@
 #############################################
 #
 #	Generate Stats w fslmeants 
-#	
+#/Volumes/helpern_share/Image_Analysis_Scripts/ROI_analyses/HO_subcortical/2_remove_CSF.sh /Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/dti-tk/dki_dti-tk/03_Analysis /Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/dti-tk/dki_dti-tk/03_Analysis/00_Config_Files/ids.txt /Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/dti-tk/dki_dti-tk/03_Analysis/00_Config_Files/mets.txt /Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/dti-tk/dki_dti-tk/03_Analysis/00_Config_Files/rois.txt /Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/dti-tk/dki_dti-tk/03_Analysis/04_ROI_Warps /Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/dti-tk/dki_dti-tk/03_Analysis/05_Means_csf_masked 
 #      
 ############################################# 
 
@@ -11,7 +11,7 @@ set -euo pipefail
 # ================================
 # Usage
 # ================================
-# ./roi_pipeline.sh <base_dir> <ids_file> <dmets_file> <rois_file> <roi_warps_dir> <means_dir> <mean_csf_dir> [threshold]
+# ./roi_pipeline.sh <base_dir> <ids_file> <dmets_file> <rois_file> <roi_warps_dir> <means_dir> [threshold]
 #
 # - base_dir      = main analysis directory (where 01_Scalar_Prep, 02_Tensors, etc. live)
 # - ids_file      = text file with subject IDs, one per line
@@ -19,11 +19,10 @@ set -euo pipefail
 # - rois_file     = text file with ROI names (matching your masks)
 # - roi_warps_dir = directory where warped ROIs are stored
 # - means_dir     = directory where mean outputs should be written
-# - mean_csf_dir  = directory where mean CSF mask outputs should be written
 # - threshold     = (optional) CSF threshold value, default = 1.5
 
-if [ "$#" -lt 7 ] || [ "$#" -gt 8 ]; then
-  echo "Usage: $0 <base_dir> <ids_file> <dmets_file> <rois_file> <roi_warps_dir> <means_dir> <mean_csf_dir> [threshold]"
+if [ "$#" -lt 6 ] || [ "$#" -gt 7 ]; then
+  echo "Usage: $0 <base_dir> <ids_file> <dmets_file> <rois_file> <roi_warps_dir> <means_dir> <means_dir> [threshold]"
   exit 1
 fi
 
@@ -33,8 +32,7 @@ dmets_file=$3
 rois_file=$4
 roi_warps=$5
 means_dir=$6
-mean_csf_dir=$7
-threshold=${8:-1.5}   # default 1.5
+threshold=${7:-1.5}   # default 1.5
 
 # Create a clean string for filenames (remove dot)
 thr_label=$(echo "$threshold" | sed 's/\.//g')
@@ -79,22 +77,19 @@ else
   exit 1
 fi
 
-mkdir -p "$roi_warps" "$means_dir" "$mean_csf_dir"
+mkdir -p "$roi_warps" "$means_dir" "$means_dir"
 
 # ================================
 # Individual CSF mask section
 # ================================
+mkdir -p "$roi_warps/ROIs_Individ_CSF_masked"
 for i in "${ids[@]}"; do
   echo "Processing subject $i ..."
   fslmaths "$dki/${i}/dti_md_dtitk.nii.gz" -uthr "$threshold" -bin "$dki/${i}/csf_mask.nii"
 
-  for f in "${dmets[@]}"; do
-    fslmaths "$dki/${i}/csf_mask.nii" -mul "$dki/${i}/${f}_dtitk.nii" "$dki/${i}/${f}_dtitk_csfmasked.nii"
-  done
-
-  mkdir -p "$roi_warps/${i}"
+  mkdir -p "$roi_warps/ROIs_Individ_CSF_masked/${i}"
   for r in "${rois[@]}"; do
-    fslmaths "$roi_warps/${r}.nii.gz" -mul "$dki/${i}/csf_mask.nii" "$roi_warps/${i}/${r}.nii"
+    fslmaths "$roi_warps/${r}.nii.gz" -mul "$dki/${i}/csf_mask.nii" "$roi_warps/ROIs_Individ_CSF_masked/${i}/${r}.nii"
   done
 
   mkdir -p "$means_dir/${i}"
@@ -103,7 +98,7 @@ for i in "${ids[@]}"; do
       fslmeants \
         -i "$dki/${i}/${m}_dtitk_csfmasked.nii" \
         -o "$means_dir/${i}/${m}_${r}.txt" \
-        -m "$roi_warps/${i}/${r}.nii.gz"
+        -m "$roi_warps/ROIs_Individ_CSF_masked/${i}/${r}.nii"
     done
   done
 done
@@ -117,21 +112,62 @@ done
 
 # Merge ROIs for each metric
 for m in "${dmets[@]}"; do
-  paste "$means_dir/${m}_".*.txt > "$means_dir/all_${m}.txt"
+  paste "$means_dir/${m}_"*.txt > "$means_dir/all_${m}.txt"
 done
 
 # ================================
 # Mean CSF mask section
 # ================================
-fslmaths "$mean_csf_dir/all_dti_md_mean.nii.gz" \
+fslmaths "$base/03_TBSS/stats/all_dti_md.nii.gz" \
+  -Tmean "$base/03_TBSS/all_dti_md_mean.nii.gz"
+fslmaths "$base/03_TBSS/all_dti_md_mean.nii.gz" \
   -uthr "$threshold" -bin \
-  "$mean_csf_dir/all_dti_md_mean_thr${thr_label}.nii.gz"
+  "$base/03_TBSS/all_dti_md_mean_thr${thr_label}.nii.gz"
 
+mkdir -p "$roi_warps/ROIs_Mean_CSF_masked"
 for i in "${ids[@]}"; do
   for r in "${rois[@]}"; do
-    fslmaths "$mean_csf_dir/all_dti_md_mean_thr${thr_label}.nii.gz" \
+    fslmaths "$base/03_TBSS/all_dti_md_mean_thr${thr_label}.nii.gz" \
       -mul "$roi_warps/${r}.nii.gz" \
-      "$roi_warps/${r}_csf_masked.nii.gz"
+      "$roi_warps/ROIs_Mean_CSF_masked/${r}.nii.gz"
   done
 done
 
+# Extract means using group mean CSF mask
+mkdir -p "$means_dir/mean"
+for m in "${dmets[@]}"; do
+  for r in "${rois[@]}"; do
+    fslmeants \
+      -i "$base/03_TBSS/stats/all_${m}.nii.gz" \
+      -o "$means_dir/mean/${m}_${r}.txt" \
+      -m "$roi_warps/ROIs_Mean_CSF_masked/${r}.nii.gz"
+  done
+done
+
+# Combine ROI text outputs into one file per metric
+for m in "${dmets[@]}"; do
+  paste "$means_dir/mean/${m}_"*.txt > "$means_dir/mean/all_${m}.txt"
+done
+
+#############################################
+# Build CSV summary files
+#############################################
+
+build_csv() {
+  src_dir="$1"    # e.g. $means_dir or $means_dir/mean
+  out_csv="$2"    # output CSV path
+  echo -n "SubjID,Metric" > "$out_csv"
+  for r in "${rois[@]}"; do echo -n ",$r" >> "$out_csv"; done
+  echo "" >> "$out_csv"
+
+  for m in "${dmets[@]}"; do
+    awk -v metric="$m" 'NR==FNR {ids[NR]=$1; next}
+      {printf "%s,%s",ids[FNR],metric;
+       for(i=1;i<=NF;i++){printf ",%s",$i}
+       print ""}' "$ids_file" "$src_dir/all_${m}.txt" >> "$out_csv"
+  done
+}
+
+# --- Create both CSVs ---
+build_csv "$means_dir"          "$means_dir/Individual_CSF_Mask_Means.csv"
+build_csv "$means_dir/mean"     "$means_dir/Mean_CSF_Mask_Means.csv"
