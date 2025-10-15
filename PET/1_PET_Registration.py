@@ -1,144 +1,1 @@
-import os
-import os.path as op
-import glob
-from shutil import copyfile
-import subprocess
-from itertools import compress
-import sys
-
-# ============================================
-# Directories
-# ============================================
-petDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/PET/nii_wave2'
-fsDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/freesurfer/freesurfer_6.0/03_Analysis'
-outPath = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/pet_suv/mSUVr_2025'
-
-# ============================================
-# Subject filtering
-# ============================================
-paths_pet = sorted(glob.glob(op.join(petDir, 'IAM_*')))
-paths_fs = sorted(glob.glob(op.join(fsDir, 'IAM_*')))
-
-subs_pet = [op.basename(x) for x in paths_pet]
-subs_fs = [op.basename(x) for x in paths_fs]
-idx = [x in subs_fs for x in subs_pet]
-subs_pet = list(compress(subs_pet, idx))
-idx = [x in subs_pet for x in subs_fs]
-subs_fs = list(compress(subs_fs, idx))
-paths_pet = sorted([op.join(petDir, x) for x in subs_pet])
-paths_fs = sorted([op.join(fsDir, x) for x in subs_fs])
-
-# --- If subject ID is provided, filter to that subject only ---
-if len(sys.argv) > 1:
-    subj = sys.argv[1]
-    print(f"Running only subject: {subj}")
-    paths_pet = [p for p in paths_pet if subj in p]
-    paths_fs = [p for p in paths_fs if subj in p]
-
-# ============================================
-# Processing loop
-# ============================================
-failedRun = []
-for idx, (path_pet, path_fs) in enumerate(zip(paths_pet, paths_fs)):
-    try:
-        ctacPath = glob.glob(op.join(path_pet, '*AC_CT_Brain_(CTAC).nii.gz'))[-1]
-        suvPath = glob.glob(op.join(path_pet, '*PET_Brain_AC.nii.gz*'))[-1]
-        t1Path = op.join(path_fs, 'mri', 'T1.mgz')
-
-        outDir = op.join(outPath, op.basename(path_pet))
-        os.makedirs(outDir, exist_ok=True)
-
-        path_t1 = op.join(outDir, 'T1.nii.gz')
-        path_omat = op.join(outDir, 'CTAC_2_T1.mat')
-        path_ctac = op.join(outDir, 'CTAC.nii.gz')
-        path_suv = op.join(outDir, 'SUV.nii.gz')
-        path_ctac_std = op.join(outDir, 'CTAC_STD.nii.gz')
-        path_suv_std = op.join(outDir, 'SUV_STD.nii.gz')
-        path_suv_ctac = op.join(outDir, 'SUV_2_CTAC.nii.gz')
-        path_ctac_reg = op.join(outDir, 'CTAC_REG.nii.gz')
-        path_suv_reg = op.join(outDir, 'SUV_REG.nii.gz')
-        path_suv_reg_thr = op.join(outDir, 'SUV_REG_THR.nii.gz')
-        path_suv_reg_reslice = op.join(outDir, 'SUV_REG_reslice.nii.gz')
-
-        if not op.exists(path_suv_reg):
-            print(f"Processing {op.basename(path_pet)}")
-
-            # Convert T1 to NIfTI
-            arg = ['mrconvert', '-force', t1Path, path_t1]
-            completion = subprocess.run(arg, capture_output=True, text=True)
-            print(" ".join(arg))
-            print("stdout:", completion.stdout)
-            print("stderr:", completion.stderr)
-
-            # Copy PET
-            copyfile(ctacPath, path_ctac)
-            copyfile(suvPath, path_suv)
-
-            # Reorient CTAC
-            arg = ['fslreorient2std', path_ctac, path_ctac_std]
-            completion = subprocess.run(arg, capture_output=True, text=True)
-            print(" ".join(arg))
-            print("stdout:", completion.stdout)
-            print("stderr:", completion.stderr)
-
-            # Reorient SUV
-            arg = ['fslreorient2std', path_suv, path_suv_std]
-            completion = subprocess.run(arg, capture_output=True, text=True)
-            print(" ".join(arg))
-            print("stdout:", completion.stdout)
-            print("stderr:", completion.stderr)
-
-            # Register SUV to CTAC
-            arg = ['flirt', '-ref', path_ctac_std, '-in', path_suv_std, '-out', path_suv_ctac, '-v']
-            completion = subprocess.run(arg, capture_output=True, text=True)
-            print(" ".join(arg))
-            print("stdout:", completion.stdout)
-            print("stderr:", completion.stderr)
-
-            # Register CTAC to T1
-            arg = [
-                'flirt', '-ref', path_t1, '-in', path_ctac_std, '-out', path_ctac_reg,
-                '-omat', path_omat, '-dof', '6', '-cost', 'mutualinfo', '-searchcost', 'mutualinfo', '-v'
-            ]
-            completion = subprocess.run(arg, capture_output=True, text=True)
-            print(" ".join(arg))
-            print("stdout:", completion.stdout)
-            print("stderr:", completion.stderr)
-
-            # Apply affine to SUV
-            arg = [
-                'flirt', '-ref', path_t1, '-in', path_suv_ctac, '-out', path_suv_reg,
-                '-init', path_omat, '-dof', '6', '-applyxfm', '-v'
-            ]
-            completion = subprocess.run(arg, capture_output=True, text=True)
-            print(" ".join(arg))
-            print("stdout:", completion.stdout)
-            print("stderr:", completion.stderr)
-
-            # Threshold SUV
-            arg = ['fslmaths', path_suv_reg, '-thr', '0', path_suv_reg_thr]
-            completion = subprocess.run(arg, capture_output=True, text=True)
-            print(" ".join(arg))
-            print("stdout:", completion.stdout)
-            print("stderr:", completion.stderr)
-            
-            # Reslice SUV_REG
-            arg = [
-                'flirt', '-ref', path_t1, '-in', path_suv_reg_thr, '-out', path_suv_reg_reslice
-            ]
-            completion = subprocess.run(arg, capture_output=True, text=True)
-            print(" ".join(arg))
-            print("stdout:", completion.stdout)
-            print("stderr:", completion.stderr)
-
-#             os.remove(path_suv_reg)
-#             os.remove(path_suv_reg_thr)
-#             os.rename(path_suv_reg_reslice, path_suv_reg)
-
-    except Exception as e:
-        print(f"Error processing {op.basename(path_pet)}: {e}")
-        failedRun.append(op.basename(path_pet))
-
-# Summary
-if failedRun:
-    print("Failed subjects:", failedRun)
+# Original script by Siddhartha Dhiman (@TheJaeger), modified and automated by Ryn Thornimport osimport os.path as opimport globfrom shutil import copyfileimport subprocessfrom itertools import compressimport sys# ============================================# Command-line arguments# ============================================if len(sys.argv) < 4:    print("Usage: python PET_Registration.py <petDir> <fsDir> <outPath> [subjectID]")    sys.exit(1)petDir = sys.argv[1]fsDir = sys.argv[2]outPath = sys.argv[3]subj = sys.argv[4] if len(sys.argv) > 4 else Noneprint(f"\nPET directory: {petDir}")print(f"FS directory: {fsDir}")print(f"Output directory: {outPath}")if subj:    print(f"Running only subject: {subj}")print("==========================================\n")# ============================================# Subject filtering# ============================================paths_pet = sorted(glob.glob(op.join(petDir, 'IAM_*')))paths_fs = sorted(glob.glob(op.join(fsDir, 'IAM_*')))subs_pet = [op.basename(x) for x in paths_pet]subs_fs = [op.basename(x) for x in paths_fs]idx = [x in subs_fs for x in subs_pet]subs_pet = list(compress(subs_pet, idx))idx = [x in subs_pet for x in subs_fs]subs_fs = list(compress(subs_fs, idx))paths_pet = sorted([op.join(petDir, x) for x in subs_pet])paths_fs = sorted([op.join(fsDir, x) for x in subs_fs])# --- If subject ID is provided, filter to that subject only ---if len(sys.argv) > 1:    subj = sys.argv[1]    print(f"Running only subject: {subj}")    paths_pet = [p for p in paths_pet if subj in p]    paths_fs = [p for p in paths_fs if subj in p]# ============================================# Processing loop# ============================================failedRun = []for idx, (path_pet, path_fs) in enumerate(zip(paths_pet, paths_fs)):    try:        ctacPath = glob.glob(op.join(path_pet, '*AC_CT_Brain_(CTAC).nii.gz'))[-1]        suvPath = glob.glob(op.join(path_pet, '*PET_Brain_AC.nii.gz*'))[-1]        t1Path = op.join(path_fs, 'mri', 'T1.mgz')        outDir = op.join(outPath, op.basename(path_pet))        os.makedirs(outDir, exist_ok=True)        path_t1 = op.join(outDir, 'T1.nii.gz')        path_omat = op.join(outDir, 'CTAC_2_T1.mat')        path_ctac = op.join(outDir, 'CTAC.nii.gz')        path_suv = op.join(outDir, 'SUV.nii.gz')        path_ctac_std = op.join(outDir, 'CTAC_STD.nii.gz')        path_suv_std = op.join(outDir, 'SUV_STD.nii.gz')        path_suv_ctac = op.join(outDir, 'SUV_2_CTAC.nii.gz')        path_ctac_reg = op.join(outDir, 'CTAC_REG.nii.gz')        path_suv_reg = op.join(outDir, 'SUV_REG.nii.gz')        path_suv_reg_thr = op.join(outDir, 'SUV_REG_THR.nii.gz')        path_suv_reg_reslice = op.join(outDir, 'SUV_REG_reslice.nii.gz')        if not op.exists(path_suv_reg):            print(f"Processing {op.basename(path_pet)}")            # Convert T1 to NIfTI            arg = ['mrconvert', '-force', t1Path, path_t1]            completion = subprocess.run(arg, capture_output=True, text=True)            print(" ".join(arg))            print("stdout:", completion.stdout)            print("stderr:", completion.stderr)            # Copy PET            copyfile(ctacPath, path_ctac)            copyfile(suvPath, path_suv)            # Reorient CTAC            arg = ['fslreorient2std', path_ctac, path_ctac_std]            completion = subprocess.run(arg, capture_output=True, text=True)            print(" ".join(arg))            print("stdout:", completion.stdout)            print("stderr:", completion.stderr)            # Reorient SUV            arg = ['fslreorient2std', path_suv, path_suv_std]            completion = subprocess.run(arg, capture_output=True, text=True)            print(" ".join(arg))            print("stdout:", completion.stdout)            print("stderr:", completion.stderr)            # Register SUV to CTAC            arg = ['flirt', '-ref', path_ctac_std, '-in', path_suv_std, '-out', path_suv_ctac, '-v']            completion = subprocess.run(arg, capture_output=True, text=True)            print(" ".join(arg))            print("stdout:", completion.stdout)            print("stderr:", completion.stderr)            # Register CTAC to T1            arg = [                'flirt', '-ref', path_t1, '-in', path_ctac_std, '-out', path_ctac_reg,                '-omat', path_omat, '-dof', '6', '-cost', 'mutualinfo', '-searchcost', 'mutualinfo', '-v'            ]            completion = subprocess.run(arg, capture_output=True, text=True)            print(" ".join(arg))            print("stdout:", completion.stdout)            print("stderr:", completion.stderr)            # Apply affine to SUV            arg = [                'flirt', '-ref', path_t1, '-in', path_suv_ctac, '-out', path_suv_reg,                '-init', path_omat, '-dof', '6', '-applyxfm', '-v'            ]            completion = subprocess.run(arg, capture_output=True, text=True)            print(" ".join(arg))            print("stdout:", completion.stdout)            print("stderr:", completion.stderr)            # Threshold SUV            arg = ['fslmaths', path_suv_reg, '-thr', '0', path_suv_reg_thr]            completion = subprocess.run(arg, capture_output=True, text=True)            print(" ".join(arg))            print("stdout:", completion.stdout)            print("stderr:", completion.stderr)                        # Reslice SUV_REG            arg = [                'flirt', '-ref', path_t1, '-in', path_suv_reg_thr, '-out', path_suv_reg_reslice            ]            completion = subprocess.run(arg, capture_output=True, text=True)            print(" ".join(arg))            print("stdout:", completion.stdout)            print("stderr:", completion.stderr)#             os.remove(path_suv_reg)#             os.remove(path_suv_reg_thr)#             os.rename(path_suv_reg_reslice, path_suv_reg)    except Exception as e:        print(f"Error processing {op.basename(path_pet)}: {e}")        failedRun.append(op.basename(path_pet))# Summaryif failedRun:    print("Failed subjects:", failedRun)

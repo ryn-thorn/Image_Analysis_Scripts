@@ -1,7 +1,7 @@
 library(ggplot2)
 
 # ---- Input your CSV path here ----
-csv_path <- "/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/centiloid_results_both_tracers.csv"   # change this to your actual file
+csv_path <- "/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/Calibrated-Coefficients/centiloids_both_tracers.csv"   # change this to your actual file
 df <- read.csv(csv_path)
 
 # ---- Plot 1: Centiloid vs Age ----
@@ -11,7 +11,7 @@ p1 <- ggplot(df, aes(x=Age, y=Centiloid, color=amyloid)) +
   theme_minimal() +
   labs(title="Centiloid vs Age", y="Centiloid")
 
-ggsave("Centiloid_vs_Age.pdf", plot=p1, width=6, height=5)
+ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/Calibrated-Coefficients/Centiloid_vs_Age.pdf", plot=p1, width=6, height=5)
 
 # ---- Plot 2: MeanSUVR vs Age ----
 p2 <- ggplot(df, aes(x=Age, y=MeanSUVR, color=amyloid)) +
@@ -20,7 +20,7 @@ p2 <- ggplot(df, aes(x=Age, y=MeanSUVR, color=amyloid)) +
   theme_minimal() +
   labs(title="MeanSUVR vs Age", y="MeanSUVR")
 
-ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/MeanSUVR_vs_Age.pdf", plot=p2, width=6, height=5)
+ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/Calibrated-Coefficients/MeanSUVR_vs_Age.pdf", plot=p2, width=6, height=5)
 
 # ---- Plot 3: Combined with dual axis ----
 p3 <- ggplot(df, aes(x=Age)) +
@@ -35,4 +35,4 @@ p3 <- ggplot(df, aes(x=Age)) +
   scale_color_manual(values=c("Centiloid"="blue", "MeanSUVR"="red")) +
   theme(legend.title=element_blank())
 
-ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/Centiloid_and_MeanSUVR_vs_Age.pdf", plot=p3, width=7, height=5)
+ggsave("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/centiloid_project/Calibrated-Coefficients/Centiloid_and_MeanSUVR_vs_Age.pdf", plot=p3, width=7, height=5)
