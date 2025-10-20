@@ -45,20 +45,17 @@ def safe_run_cmd(cmd, output_file):
 # Core processing steps
 # ================================
 def reorient_and_register(pet_img, t1_img, subj_out_dir, pet_prefix):
-    """Reorient PET to std and register to T1 using user’s method."""
+    """Reorient PET to std and register directly to T1. Skip threshold/reslice."""
     os.makedirs(subj_out_dir, exist_ok=True)
 
     pet_std = os.path.join(subj_out_dir, f"{pet_prefix}_pet_std.nii.gz")
     pet_t1 = os.path.join(subj_out_dir, f"{pet_prefix}_pet_t1.nii.gz")
-    pet_t1_thr = os.path.join(subj_out_dir, f"{pet_prefix}_pet_t1_thr.nii.gz")
-    pet_t1_reslice = os.path.join(subj_out_dir, f"{pet_prefix}_pet_t1_reslice.nii.gz")
 
+    # Reorient and register
     safe_run_cmd(['fslreorient2std', pet_img, pet_std], pet_std)
     safe_run_cmd(['flirt', '-ref', t1_img, '-in', pet_std, '-out', pet_t1, '-v'], pet_t1)
-    safe_run_cmd(['fslmaths', pet_t1, '-thr', '0', pet_t1_thr], pet_t1_thr)
-    safe_run_cmd(['flirt', '-ref', t1_img, '-in', pet_t1_thr, '-out', pet_t1_reslice], pet_t1_reslice)
 
-    return pet_t1_reslice
+    return pet_t1
 
 
 def transform_mask_to_t1(mask_path, t1_img, subj_out_dir, prefix):
@@ -117,11 +114,11 @@ def main(args):
             print(f"⚠️  Missing files for {subj_id}. Skipping.")
             continue
 
-        # Registration
+        # Registration (T1 space)
         fbb_t1 = reorient_and_register(fbb[0], t1[0], subj_out_dir, "PET_FBB")
         pib_t1 = reorient_and_register(pib[0], t1[0], subj_out_dir, "PET_PIB")
 
-        # Resample VOIs to T1 space (only once per subject)
+        # Resample VOIs to T1 space (once per subject)
         voi_ctx_t1 = transform_mask_to_t1(args.voi_ctx, t1[0], subj_out_dir, "ctx")
         voi_wc_t1 = transform_mask_to_t1(args.voi_wc, t1[0], subj_out_dir, "wc")
 
