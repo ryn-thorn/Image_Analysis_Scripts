@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-Centiloid calibration script for Florbetapir (FBP, 18F-AV45)
-using the GAAIN paired PiB+FBP dataset and AVID VOIs.
+Optimized FBP Centiloid calibration script using GAAIN paired PiB+FBP dataset
+and AVID VOIs, with MNI->T1 warp computed once per subject.
 
-Target regions are combined into a single composite cortex mask.
+Workflow:
+1. Compute MNI -> T1 warp (FLIRT + FNIRT) once per subject.
+2. Apply warp to merged target VOI and reference VOI (MNI->T1).
+3. Register PETs (FBP & PiB) to T1 space.
+4. Compute SUVRs and Centiloids.
 
 Usage:
     python centiloid_calibration_fbp.py \
@@ -19,23 +23,23 @@ import subprocess
 import argparse
 import numpy as np
 import pandas as pd
+import nibabel as nib
 from scipy.stats import linregress
 
+# ================================
+# Utility functions
+# ================================
 def run_cmd(cmd):
-    """Run a command and print it."""
     print("CMD:", " ".join(cmd))
     subprocess.check_call(cmd)
 
 def safe_run_cmd(cmd, outfile=None):
-    """Run a command only if outfile does not exist."""
     if outfile and os.path.exists(outfile):
         print(f"✅ Skipping step: {os.path.basename(outfile)} already exists.")
         return
     run_cmd(cmd)
 
 def truncate_4d_to_3d(img_path, out_path):
-    """Truncate 4D PET to first volume if necessary."""
-    import nibabel as nib
     img = nib.load(img_path)
     if len(img.shape) == 4:
         print(f"⚠️  {os.path.basename(img_path)} is 4D, truncating to first volume")
@@ -46,11 +50,9 @@ def truncate_4d_to_3d(img_path, out_path):
             run_cmd(['cp', img_path, out_path])
 
 def merge_target_vois(target_dir, out_mask):
-    """Merge all target VOIs in a folder into one mask."""
     voi_list = sorted(glob.glob(os.path.join(target_dir, "*.nii*")))
     if not voi_list:
         raise FileNotFoundError(f"No VOIs found in {target_dir}")
-
     print(f"🧩 Merging {len(voi_list)} target VOIs into one composite mask")
     tmp = voi_list[0]
     for voi in voi_list[1:]:
@@ -58,9 +60,42 @@ def merge_target_vois(target_dir, out_mask):
     run_cmd(['fslmaths', tmp, '-bin', out_mask])
     return out_mask
 
-def resample_mask_to_pet(mask, pet_img, out_mask):
-    """Resample a mask to the PET image space."""
-    safe_run_cmd(['flirt', '-in', mask, '-ref', pet_img, '-out', out_mask, '-interp', 'nearestneighbour'], out_mask)
+def pet_registration(pet_img, t1_img, pet_std, pet_t1):
+    """Reorient and register PET directly to T1 (no threshold/reslice)."""
+    safe_run_cmd(['fslreorient2std', pet_img, pet_std], pet_std)
+    truncate_4d_to_3d(pet_std, pet_std)
+    safe_run_cmd(['flirt', '-ref', t1_img, '-in', pet_std, '-out', pet_t1], pet_t1)
+    return pet_t1
+
+def linear_flirt_mni_to_t1(mni_template, t1_img, out_affine):
+    """Compute initial FLIRT affine: MNI -> T1."""
+    safe_run_cmd([
+        'flirt', '-in', mni_template, '-ref', t1_img,
+        '-omat', out_affine, '-dof', '12'
+    ], out_affine)
+    return out_affine
+
+def nonlinear_fnirt_mni_to_t1(mni_template, t1_img, affine_mat, out_warp):
+    """Compute nonlinear warp from MNI -> T1 using FNIRT, initialized with affine."""
+    safe_run_cmd([
+        'fnirt',
+        '--in=' + mni_template,
+        '--aff=' + affine_mat,
+        '--ref=' + t1_img,
+        '--cout=' + out_warp
+    ], out_warp)
+    return out_warp
+
+def apply_warp_to_voi(voi_img, t1_img, warp_file, out_mask):
+    """Apply FNIRT warp to VOI to bring it into subject T1 space."""
+    safe_run_cmd([
+        'applywarp',
+        '--ref=' + t1_img,
+        '--in=' + voi_img,
+        '--warp=' + warp_file,
+        '--out=' + out_mask,
+        '--interp=nn'
+    ], out_mask)
     return out_mask
 
 def extract_mean_in_mask(img, mask):
@@ -71,31 +106,18 @@ def extract_mean_in_mask(img, mask):
     except subprocess.CalledProcessError:
         return np.nan
 
-def pet_registration(pet_img, t1_img, pet_std, pet_t1, pet_thr, pet_reslice):
-    """Reorient, register PET to T1, and threshold."""
-    # Reorient PET to std
-    safe_run_cmd(['fslreorient2std', pet_img, pet_std], pet_std)
-
-    # Truncate if 4D
-    truncate_4d_to_3d(pet_std, pet_std)
-
-    # Register PET to T1
-    safe_run_cmd(['flirt', '-ref', t1_img, '-in', pet_std, '-out', pet_t1], pet_t1)
-
-    # Threshold at 0
-    safe_run_cmd(['fslmaths', pet_t1, '-thr', '0', pet_thr], pet_thr)
-
-    # Reslice to T1 (ensure matching size)
-    safe_run_cmd(['flirt', '-ref', t1_img, '-in', pet_thr, '-out', pet_reslice], pet_reslice)
-    return pet_reslice
-
+# ================================
+# Main analysis
+# ================================
 def main(args):
     os.makedirs(args.outdir, exist_ok=True)
 
-    # Merge cortex mask once
-    merged_ctx = os.path.join(args.outdir, "composite_ctx_mask.nii.gz")
-    if not os.path.exists(merged_ctx):
-        merge_target_vois(args.voi_targets, merged_ctx)
+    # Merge target VOIs once (MNI space)
+    merged_ctx_mni = os.path.join(args.outdir, "composite_ctx_mask_MNI.nii.gz")
+    if not os.path.exists(merged_ctx_mni):
+        merge_target_vois(args.voi_targets, merged_ctx_mni)
+
+    mni_template = '/usr/local/fsl/data/standard/MNI152_T1_1mm.nii.gz'
 
     subj_dirs = sorted(glob.glob(os.path.join(args.root, "*")))
     rows = []
@@ -120,41 +142,45 @@ def main(args):
             print(f"⚠️  Missing files for {subj_id}. Skipping.")
             continue
 
-        # Prepare file paths
+        # Reorient images
         fbp_reor = os.path.join(subj_out_dir, "PET_FBP_reor.nii.gz")
         pib_reor = os.path.join(subj_out_dir, "PET_PIB_reor.nii.gz")
         t1_reor = os.path.join(subj_out_dir, "T1_reor.nii.gz")
-
-        fbp_std = os.path.join(subj_out_dir, "PET_FBP_pet_std.nii.gz")
-        fbp_t1 = os.path.join(subj_out_dir, "PET_FBP_pet_t1.nii.gz")
-        fbp_thr = os.path.join(subj_out_dir, "PET_FBP_pet_t1_thr.nii.gz")
-        fbp_reslice = os.path.join(subj_out_dir, "PET_FBP_pet_t1_reslice.nii.gz")
-
-        pib_std = os.path.join(subj_out_dir, "PET_PIB_pet_std.nii.gz")
-        pib_t1 = os.path.join(subj_out_dir, "PET_PIB_pet_t1.nii.gz")
-        pib_thr = os.path.join(subj_out_dir, "PET_PIB_pet_t1_thr.nii.gz")
-        pib_reslice = os.path.join(subj_out_dir, "PET_PIB_pet_t1_reslice.nii.gz")
-
-        # Reorient
         safe_run_cmd(['fslreorient2std', fbp[0], fbp_reor], fbp_reor)
         safe_run_cmd(['fslreorient2std', pib[0], pib_reor], pib_reor)
         safe_run_cmd(['fslreorient2std', t1[0], t1_reor], t1_reor)
 
-        # Register PETs
-        fbp_pet_reslice = pet_registration(fbp_reor, t1_reor, fbp_std, fbp_t1, fbp_thr, fbp_reslice)
-        pib_pet_reslice = pet_registration(pib_reor, t1_reor, pib_std, pib_t1, pib_thr, pib_reslice)
+        # ================================
+        # Step 1: MNI -> T1 warp (once per subject)
+        # ================================
+        affine_file = os.path.join(subj_out_dir, "mni2t1_affine.mat")
+        warp_file = os.path.join(subj_out_dir, "mni2t1_warp.nii.gz")
+        linear_flirt_mni_to_t1(mni_template, t1_reor, affine_file)
+        nonlinear_fnirt_mni_to_t1(mni_template, t1_reor, affine_file, warp_file)
 
-        # Resample masks to PET
-        merged_ctx_res = resample_mask_to_pet(merged_ctx, fbp_pet_reslice,
-                                             os.path.join(subj_out_dir, "merged_ctx_mask_reslice.nii.gz"))
-        voi_ref_res = resample_mask_to_pet(args.voi_ref, fbp_pet_reslice,
-                                          os.path.join(subj_out_dir, "voi_ref_reslice.nii.gz"))
+        # Apply warp to VOIs
+        merged_ctx_t1 = os.path.join(subj_out_dir, "composite_ctx_mask_T1.nii.gz")
+        voi_ref_t1 = os.path.join(subj_out_dir, "voi_ref_T1.nii.gz")
+        apply_warp_to_voi(merged_ctx_mni, t1_reor, warp_file, merged_ctx_t1)
+        apply_warp_to_voi(args.voi_ref, t1_reor, warp_file, voi_ref_t1)
 
-        # Compute ROI means
-        fbp_ctx_mean = extract_mean_in_mask(fbp_pet_reslice, merged_ctx_res)
-        fbp_ref_mean = extract_mean_in_mask(fbp_pet_reslice, voi_ref_res)
-        pib_ctx_mean = extract_mean_in_mask(pib_pet_reslice, merged_ctx_res)
-        pib_ref_mean = extract_mean_in_mask(pib_pet_reslice, voi_ref_res)
+        # ================================
+        # Step 2: Register PETs to T1
+        # ================================
+        fbp_pet_t1 = pet_registration(fbp_reor, t1_reor,
+                                      os.path.join(subj_out_dir, "PET_FBP_pet_std.nii.gz"),
+                                      os.path.join(subj_out_dir, "PET_FBP_pet_t1.nii.gz"))
+        pib_pet_t1 = pet_registration(pib_reor, t1_reor,
+                                      os.path.join(subj_out_dir, "PET_PIB_pet_std.nii.gz"),
+                                      os.path.join(subj_out_dir, "PET_PIB_pet_t1.nii.gz"))
+
+        # ================================
+        # Step 3: Compute ROI means
+        # ================================
+        fbp_ctx_mean = extract_mean_in_mask(fbp_pet_t1, merged_ctx_t1)
+        fbp_ref_mean = extract_mean_in_mask(fbp_pet_t1, voi_ref_t1)
+        pib_ctx_mean = extract_mean_in_mask(pib_pet_t1, merged_ctx_t1)
+        pib_ref_mean = extract_mean_in_mask(pib_pet_t1, voi_ref_t1)
 
         fbp_suvr = fbp_ctx_mean / fbp_ref_mean if fbp_ref_mean > 0 else np.nan
         pib_suvr = pib_ctx_mean / pib_ref_mean if pib_ref_mean > 0 else np.nan
@@ -165,7 +191,9 @@ def main(args):
             "pib_suvr": pib_suvr
         })
 
-    # Save raw SUVRs
+    # ================================
+    # SUVR analysis & Centiloid calculation
+    # ================================
     df = pd.DataFrame(rows)
     df.to_csv(os.path.join(args.outdir, "calibration_raw_suvr.csv"), index=False)
 
@@ -174,13 +202,9 @@ def main(args):
         print("❌ No valid SUVR pairs found.")
         return
 
-    # Linear regression
     slope, intercept, r, p, se = linregress(df_good['fbp_suvr'], df_good['pib_suvr'])
-    print(f"\n📈 Regression: PiB_calc = {slope:.4f} * FBP_SUVR + {intercept:.4f} (R²={r**2:.3f})")
-
     df_good['pib_calc'] = slope * df_good['fbp_suvr'] + intercept
 
-    # Estimate YC/AD means
     yc_mask = df_good['subj'].str.contains("YC", case=False)
     ad_mask = df_good['subj'].str.contains("E", case=False)
 
@@ -190,14 +214,12 @@ def main(args):
         mean_pib_yc = df_good['pib_suvr'].quantile(0.1)
         mean_pib_ad = df_good['pib_suvr'].quantile(0.9)
 
-    # Centiloid formula coefficients
     A = 100 * slope / (mean_pib_ad - mean_pib_yc)
     B = 100 * (intercept - mean_pib_yc) / (mean_pib_ad - mean_pib_yc)
-
     df_good['centiloid'] = A * df_good['fbp_suvr'] + B
+
     df_good.to_csv(os.path.join(args.outdir, "calibration_results.csv"), index=False)
 
-    # Save formula
     formula_path = os.path.join(args.outdir, "centiloid_formula.txt")
     with open(formula_path, "w") as f:
         f.write("# Centiloid conversion formula (AVID VOIs)\n")
@@ -210,6 +232,9 @@ def main(args):
     print(f"\n✅ Saved Centiloid conversion formula to: {formula_path}")
     print(f"   CL = {A:.3f} × FBP_SUVR + {B:.3f}")
 
+# ================================
+# Entry point
+# ================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, help="Root folder containing GAAIN subjects")
