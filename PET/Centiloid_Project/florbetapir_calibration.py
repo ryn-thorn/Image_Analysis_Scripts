@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 import nibabel as nib
 from scipy.stats import linregress
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # ================================
 # Utility functions
@@ -107,6 +108,69 @@ def extract_mean_in_mask(img, mask):
         return np.nan
 
 # ================================
+# Wrapper to process a single subject
+# ================================
+def process_single_subject(subj_path, merged_ctx_mni, args):
+    subj_id = os.path.basename(subj_path)
+    print(f"\n=== Processing subject: {subj_id} ===")
+
+    subj_out_dir = os.path.join(args.outdir, subj_id)
+    os.makedirs(subj_out_dir, exist_ok=True)
+
+    # Find files
+    fbp = glob.glob(os.path.join(subj_path, "**", "*FBP*.nii*"), recursive=True) + \
+          glob.glob(os.path.join(subj_path, "**", "*AV45*.nii*"), recursive=True) + \
+          glob.glob(os.path.join(subj_path, "**", "*florbetapir*.nii*"), recursive=True)
+    pib = glob.glob(os.path.join(subj_path, "**", "*PiB*.nii*"), recursive=True)
+    t1 = glob.glob(os.path.join(subj_path, "**", "*MRI*.nii*"), recursive=True) + \
+         glob.glob(os.path.join(subj_path, "**", "*T1*.nii*"), recursive=True) + \
+         glob.glob(os.path.join(subj_path, "**", "*mri*.nii*"), recursive=True)
+
+    if not fbp or not pib or not t1:
+        print(f"⚠️  Missing files for {subj_id}. Skipping.")
+        return None
+
+    # Reorient images
+    fbp_reor = os.path.join(subj_out_dir, "PET_FBP_reor.nii.gz")
+    pib_reor = os.path.join(subj_out_dir, "PET_PIB_reor.nii.gz")
+    t1_reor = os.path.join(subj_out_dir, "T1_reor.nii.gz")
+    safe_run_cmd(['fslreorient2std', fbp[0], fbp_reor], fbp_reor)
+    safe_run_cmd(['fslreorient2std', pib[0], pib_reor], pib_reor)
+    safe_run_cmd(['fslreorient2std', t1[0], t1_reor], t1_reor)
+
+    # Step 1: MNI -> T1 warp
+    affine_file = os.path.join(subj_out_dir, "mni2t1_affine.mat")
+    warp_file = os.path.join(subj_out_dir, "mni2t1_warp.nii.gz")
+    mni_template = '/usr/local/fsl/data/standard/MNI152_T1_1mm.nii.gz'
+    linear_flirt_mni_to_t1(mni_template, t1_reor, affine_file)
+    nonlinear_fnirt_mni_to_t1(mni_template, t1_reor, affine_file, warp_file)
+
+    # Apply warp to VOIs
+    merged_ctx_t1 = os.path.join(subj_out_dir, "composite_ctx_mask_T1.nii.gz")
+    voi_ref_t1 = os.path.join(subj_out_dir, "voi_ref_T1.nii.gz")
+    apply_warp_to_voi(merged_ctx_mni, t1_reor, warp_file, merged_ctx_t1)
+    apply_warp_to_voi(args.voi_ref, t1_reor, warp_file, voi_ref_t1)
+
+    # Step 2: Register PETs to T1
+    fbp_pet_t1 = pet_registration(fbp_reor, t1_reor,
+                                  os.path.join(subj_out_dir, "PET_FBP_pet_std.nii.gz"),
+                                  os.path.join(subj_out_dir, "PET_FBP_pet_t1.nii.gz"))
+    pib_pet_t1 = pet_registration(pib_reor, t1_reor,
+                                  os.path.join(subj_out_dir, "PET_PIB_pet_std.nii.gz"),
+                                  os.path.join(subj_out_dir, "PET_PIB_pet_t1.nii.gz"))
+
+    # Step 3: Compute ROI means
+    fbp_ctx_mean = extract_mean_in_mask(fbp_pet_t1, merged_ctx_t1)
+    fbp_ref_mean = extract_mean_in_mask(fbp_pet_t1, voi_ref_t1)
+    pib_ctx_mean = extract_mean_in_mask(pib_pet_t1, merged_ctx_t1)
+    pib_ref_mean = extract_mean_in_mask(pib_pet_t1, voi_ref_t1)
+
+    fbp_suvr = fbp_ctx_mean / fbp_ref_mean if fbp_ref_mean > 0 else np.nan
+    pib_suvr = pib_ctx_mean / pib_ref_mean if pib_ref_mean > 0 else np.nan
+
+    return {"subj": subj_id, "fbp_suvr": fbp_suvr, "pib_suvr": pib_suvr}
+
+# ================================
 # Main analysis
 # ================================
 def main(args):
@@ -117,83 +181,21 @@ def main(args):
     if not os.path.exists(merged_ctx_mni):
         merge_target_vois(args.voi_targets, merged_ctx_mni)
 
-    mni_template = '/usr/local/fsl/data/standard/MNI152_T1_1mm.nii.gz'
-
     subj_dirs = sorted(glob.glob(os.path.join(args.root, "*")))
     rows = []
 
-    for subj_path in subj_dirs:
-        subj_id = os.path.basename(subj_path)
-        print(f"\n=== Processing subject: {subj_id} ===")
+    # Process subjects in parallel
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(process_single_subject, subj, merged_ctx_mni, args): subj
+                   for subj in subj_dirs}
 
-        subj_out_dir = os.path.join(args.outdir, subj_id)
-        os.makedirs(subj_out_dir, exist_ok=True)
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                rows.append(result)
+                print(f"✅ Finished {result['subj']}")
 
-        # Find files
-        fbp = glob.glob(os.path.join(subj_path, "**", "*FBP*.nii*"), recursive=True) + \
-              glob.glob(os.path.join(subj_path, "**", "*AV45*.nii*"), recursive=True) + \
-              glob.glob(os.path.join(subj_path, "**", "*florbetapir*.nii*"), recursive=True)
-        pib = glob.glob(os.path.join(subj_path, "**", "*PiB*.nii*"), recursive=True)
-        t1 = glob.glob(os.path.join(subj_path, "**", "*MRI*.nii*"), recursive=True) + \
-             glob.glob(os.path.join(subj_path, "**", "*T1*.nii*"), recursive=True) + \
-             glob.glob(os.path.join(subj_path, "**", "*mri*.nii*"), recursive=True)
-
-        if not fbp or not pib or not t1:
-            print(f"⚠️  Missing files for {subj_id}. Skipping.")
-            continue
-
-        # Reorient images
-        fbp_reor = os.path.join(subj_out_dir, "PET_FBP_reor.nii.gz")
-        pib_reor = os.path.join(subj_out_dir, "PET_PIB_reor.nii.gz")
-        t1_reor = os.path.join(subj_out_dir, "T1_reor.nii.gz")
-        safe_run_cmd(['fslreorient2std', fbp[0], fbp_reor], fbp_reor)
-        safe_run_cmd(['fslreorient2std', pib[0], pib_reor], pib_reor)
-        safe_run_cmd(['fslreorient2std', t1[0], t1_reor], t1_reor)
-
-        # ================================
-        # Step 1: MNI -> T1 warp (once per subject)
-        # ================================
-        affine_file = os.path.join(subj_out_dir, "mni2t1_affine.mat")
-        warp_file = os.path.join(subj_out_dir, "mni2t1_warp.nii.gz")
-        linear_flirt_mni_to_t1(mni_template, t1_reor, affine_file)
-        nonlinear_fnirt_mni_to_t1(mni_template, t1_reor, affine_file, warp_file)
-
-        # Apply warp to VOIs
-        merged_ctx_t1 = os.path.join(subj_out_dir, "composite_ctx_mask_T1.nii.gz")
-        voi_ref_t1 = os.path.join(subj_out_dir, "voi_ref_T1.nii.gz")
-        apply_warp_to_voi(merged_ctx_mni, t1_reor, warp_file, merged_ctx_t1)
-        apply_warp_to_voi(args.voi_ref, t1_reor, warp_file, voi_ref_t1)
-
-        # ================================
-        # Step 2: Register PETs to T1
-        # ================================
-        fbp_pet_t1 = pet_registration(fbp_reor, t1_reor,
-                                      os.path.join(subj_out_dir, "PET_FBP_pet_std.nii.gz"),
-                                      os.path.join(subj_out_dir, "PET_FBP_pet_t1.nii.gz"))
-        pib_pet_t1 = pet_registration(pib_reor, t1_reor,
-                                      os.path.join(subj_out_dir, "PET_PIB_pet_std.nii.gz"),
-                                      os.path.join(subj_out_dir, "PET_PIB_pet_t1.nii.gz"))
-
-        # ================================
-        # Step 3: Compute ROI means
-        # ================================
-        fbp_ctx_mean = extract_mean_in_mask(fbp_pet_t1, merged_ctx_t1)
-        fbp_ref_mean = extract_mean_in_mask(fbp_pet_t1, voi_ref_t1)
-        pib_ctx_mean = extract_mean_in_mask(pib_pet_t1, merged_ctx_t1)
-        pib_ref_mean = extract_mean_in_mask(pib_pet_t1, voi_ref_t1)
-
-        fbp_suvr = fbp_ctx_mean / fbp_ref_mean if fbp_ref_mean > 0 else np.nan
-        pib_suvr = pib_ctx_mean / pib_ref_mean if pib_ref_mean > 0 else np.nan
-
-        rows.append({
-            "subj": subj_id,
-            "fbp_suvr": fbp_suvr,
-            "pib_suvr": pib_suvr
-        })
-
-    # ================================
-    # SUVR analysis & Centiloid calculation
-    # ================================
+    # SUVR analysis & Centiloid calculation (unchanged)
     df = pd.DataFrame(rows)
     df.to_csv(os.path.join(args.outdir, "calibration_raw_suvr.csv"), index=False)
 
