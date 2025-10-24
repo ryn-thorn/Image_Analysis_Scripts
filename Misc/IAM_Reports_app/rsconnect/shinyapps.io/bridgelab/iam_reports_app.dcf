@@ -1,0 +1,10 @@
+name: iam_reports_app
+title:
+username: bridgelab
+account: bridgelab
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15863323
+bundleId: 11081239
+url: https://bridgelab.shinyapps.io/iam_reports_app/
+version: 1
