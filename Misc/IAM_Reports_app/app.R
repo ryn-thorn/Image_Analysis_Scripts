@@ -6,6 +6,10 @@
 #)
 # ==============================
 
+# ======================================
+# IAM Demographics Explorer with Age & Interactive Plots (v9)
+# ======================================
+
 library(shiny)
 library(dplyr)
 library(ggplot2)
@@ -15,6 +19,7 @@ library(readr)
 library(janitor)
 library(tidyr)
 library(ggmosaic)
+library(plotly)
 
 # --- UI ---
 ui <- fluidPage(
@@ -47,7 +52,7 @@ ui <- fluidPage(
                  h3("Demographic Summary"),
                  DTOutput("summaryTable"),
                  h3("Plot"),
-                 plotOutput("plot")),
+                 plotlyOutput("plot")),
         
         tabPanel("Cross Tabs", 
                  conditionalPanel(
@@ -56,10 +61,10 @@ ui <- fluidPage(
                    DTOutput("crossTable"),
                    
                    h3("Cross Tabulation Plot: Race × Sex"),
-                   plotOutput("crossPlot"),
+                   plotlyOutput("crossPlot"),
                    
                    h3("Cross Tabulation Plot: Race × Withdraw Year"),
-                   plotOutput("crossPlot2")
+                   plotlyOutput("crossPlot2")
                  ),
                  conditionalPanel(
                    condition = "input.show_crosstabs == false",
@@ -140,51 +145,47 @@ server <- function(input, output) {
       datatable(options = list(pageLength = 10))
   })
   
-  # --- Plot ---
-  output$plot <- renderPlot({
+  # --- Main Plot ---
+  output$plot <- renderPlotly({
     df <- data()
     
-    if (input$plot_type == "Race by Wave") {
-      ggplot(df %>% filter(!is.na(race)), aes(x = race, fill = wave)) +
-        geom_bar(position = "dodge") +
-        theme_minimal(base_size = 16) +
-        coord_flip() +
-        labs(x = "Race", y = "Count", title = "Race by Wave")
-      
-    } else if (input$plot_type == "Sex by Wave") {
-      ggplot(df %>% filter(!is.na(sex)), aes(x = sex, fill = wave)) +
-        geom_bar(position = "dodge") +
-        theme_minimal(base_size = 16) +
-        labs(x = "Sex", y = "Count", title = "Sex by Wave")
-      
-    } else if (input$plot_type == "Withdrawals by Year") {
-      ggplot(df %>% filter(!is.na(withdraw_year)), aes(x = withdraw_year, fill = wave)) +
-        geom_bar(position = "dodge") +
-        theme_minimal(base_size = 16) +
-        labs(x = "Withdrawal Year", y = "Count", title = "Withdrawals by Year")
-      
-    } else if (input$plot_type == "Age Boxplot/Violin") {
-      ggplot(df %>% filter(!is.na(age)), aes(x = wave, y = age, fill = wave)) +
-        geom_violin(alpha = 0.4) +
-        geom_boxplot(width = 0.1, fill = "white", outlier.shape = 1) +
-        theme_minimal(base_size = 16) +
-        labs(x = "Wave", y = "Age", title = "Age Distribution by Wave")
-      
-    } else if (input$plot_type == "Age Histogram") {
-      ggplot(df %>% filter(!is.na(age)), aes(x = age, fill = wave)) +
-        geom_histogram(position = "identity", alpha = 0.6, bins = 20) +
-        theme_minimal(base_size = 16) +
-        labs(x = "Age", y = "Count", title = "Histogram of Age")
-      
-    } else if (input$plot_type == "Mosaic Plot") {
-      # Need complete cases for categorical variables
-      df_mosaic <- df %>% filter(!is.na(race), !is.na(sex), !is.na(withdraw_year))
-      
-      ggplot(data = df_mosaic) +
-        geom_mosaic(aes(weight = 1, x = product(race, sex), fill = withdraw_year)) +
-        theme_minimal(base_size = 16) +
-        labs(x = "Race × Sex", y = "Proportion", fill = "Withdraw Year", title = "Mosaic Plot: Race × Sex × Withdraw Year")
-    }
+    p <- switch(input$plot_type,
+                "Race by Wave" = ggplot(df %>% filter(!is.na(race)), aes(x = race, fill = wave)) +
+                  geom_bar(position = "dodge") + coord_flip() +
+                  theme_minimal(base_size = 16) +
+                  labs(x = "Race", y = "Count", title = "Race by Wave"),
+                
+                "Sex by Wave" = ggplot(df %>% filter(!is.na(sex)), aes(x = sex, fill = wave)) +
+                  geom_bar(position = "dodge") +
+                  theme_minimal(base_size = 16) +
+                  labs(x = "Sex", y = "Count", title = "Sex by Wave"),
+                
+                "Withdrawals by Year" = ggplot(df %>% filter(!is.na(withdraw_year)), aes(x = withdraw_year, fill = wave)) +
+                  geom_bar(position = "dodge") +
+                  theme_minimal(base_size = 16) +
+                  labs(x = "Withdrawal Year", y = "Count", title = "Withdrawals by Year"),
+                
+                "Age Boxplot/Violin" = ggplot(df %>% filter(!is.na(age)), aes(x = wave, y = age, fill = wave)) +
+                  geom_violin(alpha = 0.4) +
+                  geom_boxplot(width = 0.1, fill = "white", outlier.shape = 1) +
+                  theme_minimal(base_size = 16) +
+                  labs(x = "Wave", y = "Age", title = "Age Distribution by Wave"),
+                
+                "Age Histogram" = ggplot(df %>% filter(!is.na(age)), aes(x = age, fill = wave)) +
+                  geom_histogram(position = "identity", alpha = 0.6, bins = 20) +
+                  theme_minimal(base_size = 16) +
+                  labs(x = "Age", y = "Count", title = "Histogram of Age"),
+                
+                "Mosaic Plot" = {
+                  df_mosaic <- df %>% filter(!is.na(race), !is.na(sex), !is.na(withdraw_year))
+                  ggplot(df_mosaic) +
+                    geom_mosaic(aes(weight = 1, x = product(race, sex), fill = withdraw_year)) +
+                    theme_minimal(base_size = 16) +
+                    labs(x = "Race × Sex", y = "Proportion", fill = "Withdraw Year", title = "Mosaic Plot: Race × Sex × Withdraw Year")
+                }
+    )
+    
+    ggplotly(p, tooltip = "y") # Make interactive
   })
   
   # --- Cross Tabs ---
@@ -196,28 +197,29 @@ server <- function(input, output) {
       datatable(options = list(pageLength = 10))
   })
   
-  output$crossPlot <- renderPlot({
+  output$crossPlot <- renderPlotly({
     req(input$show_crosstabs)
     df <- data()
-    ggplot(df %>% filter(!is.na(sex), !is.na(race)), 
-           aes(x = race, fill = sex)) +
+    p <- ggplot(df %>% filter(!is.na(sex), !is.na(race)), aes(x = race, fill = sex)) +
       geom_bar(position = "dodge") +
       facet_wrap(~ wave) +
       theme_minimal(base_size = 16) +
       coord_flip() +
       labs(x = "Race", y = "Count", fill = "Sex", title = "Cross Tab: Race × Sex by Wave")
+    ggplotly(p, tooltip = "y")
   })
   
-  output$crossPlot2 <- renderPlot({
+  output$crossPlot2 <- renderPlotly({
     req(input$show_crosstabs)
     df <- data()
     df_plot <- df %>% filter(!is.na(race), !is.na(withdraw_year))
-    ggplot(df_plot, aes(x = race, fill = withdraw_year)) +
+    p <- ggplot(df_plot, aes(x = race, fill = withdraw_year)) +
       geom_bar(position = "dodge") +
       facet_wrap(~ wave) +
       theme_minimal(base_size = 16) +
       coord_flip() +
       labs(x = "Race", y = "Count", fill = "Withdrawal Year", title = "Cross Tab: Race × Withdraw Year by Wave")
+    ggplotly(p, tooltip = "y")
   })
   
   # --- Download Button ---
