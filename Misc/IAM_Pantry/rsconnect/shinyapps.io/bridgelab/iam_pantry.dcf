@@ -1,0 +1,10 @@
+name: iam_pantry
+title:
+username: bridgelab
+account: bridgelab
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15864436
+bundleId: 11082053
+url: https://bridgelab.shinyapps.io/iam_pantry/
+version: 1
