@@ -52,7 +52,7 @@ label_map <- c(
 
 # --- UI ---
 ui <- fluidPage(
-  titlePanel("Data Completeness Dashboard"),
+  titlePanel("IAM Pantry"),
   
   sidebarLayout(
     sidebarPanel(

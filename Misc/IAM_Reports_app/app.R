@@ -1,14 +1,10 @@
 # ==============================
-# IAM Demographics Explorer (v1.6)
+# IAM Recruitment and Retention (v1.7)
 # rsconnect::deployApp(
 #  appDir = "/Volumes/helpern_share/Image_Analysis_Scripts/Misc/IAM_Reports_app",
 #  appName = "iam_reports_app"
 #)
 # ==============================
-
-# ======================================
-# IAM Demographics Explorer with Age & Interactive Plots (v9)
-# ======================================
 
 library(shiny)
 library(dplyr)
@@ -32,7 +28,7 @@ ui <- fluidPage(
     "))
   ),
   
-  titlePanel("IAM Demographics Explorer"),
+  titlePanel("IAM Recruitment and Retention"),
   
   sidebarLayout(
     sidebarPanel(
@@ -89,7 +85,23 @@ server <- function(input, output) {
     # Harmonize columns across waves and normalize race
     df <- df %>%
       mutate(
+        # Detect multiple races
+        multi_race = case_when(
+          wave == "Wave 2" ~ (
+            rowSums(across(
+              c(white, black_or_african_american, asian,
+                american_indian_or_alaska_native_aian,
+                native_hawaiian_or_other_pacific_islander),
+              ~ .x == "Yes"
+            ), na.rm = TRUE) > 1
+          ),
+          wave == "Wave 1" ~ str_detect(x9_what_does_subject_report_as_his_or_her_race, ";|,| and "),
+          TRUE ~ FALSE
+        ),
+        
+        # Assign race
         race = case_when(
+          multi_race ~ "More Than One Race",
           wave == "Wave 1" ~ x9_what_does_subject_report_as_his_or_her_race,
           wave == "Wave 2" ~ case_when(
             white == "Yes" ~ "White",
@@ -101,15 +113,22 @@ server <- function(input, output) {
           ),
           TRUE ~ NA_character_
         ),
+        
+        # Normalize race labels and account for Hispanic fields
         race = case_when(
           race %in% c("1 White", "White") ~ "White",
           race %in% c("2 Black or African American", "Black or African American") ~ "Black or African American",
-          race %in% c("Asian") ~ "Asian",
-          race %in% c("American Indian or Alaska Native", "AIAN") ~ "American Indian or Alaska Native",
-          race %in% c("Native Hawaiian or Pacific Islander") ~ "Native Hawaiian or Pacific Islander",
-          race %in% c("Hispanic") ~ "Hispanic",
+          race %in% c("5 Asian", "Asian") ~ "Asian",
+          race %in% c("American Indian or Alaska Native", "3 American Indian or Alaska Native") ~ "American Indian or Alaska Native",
+          race %in% c("Native Hawaiian or Pacific Islander", "4 Native Hawaiian or other Pacific Islander") ~ "Native Hawaiian or Pacific Islander",
+          
+          # Hispanic from either column
+          hispanic == "1" | hispanic == "Yes" ~ "Hispanic",
+          x8_does_the_subject_report_being_of_hispanic_latino_ethnicity_i_e_having_origins_from_a_mainly_spanish_speaking_latin_american_country_regardless_of_race == "1 Yes" ~ "Hispanic",
+          
           TRUE ~ race
         ),
+        
         sex = case_when(
           wave == "Wave 1" ~ case_when(
             str_detect(x7_subjects_sex, "1") ~ "Male",
@@ -123,13 +142,16 @@ server <- function(input, output) {
           ),
           TRUE ~ NA_character_
         ),
+        
         withdraw_year = str_extract(
           did_the_participant_withdraw_withdraw_participant_no_longer_wants_to_be_part_of_the_iam_study,
           "Y[0-9]"
         ),
+        
         age = as.numeric(age)
       )
     
+    # Filter by wave
     if (input$wave != "All") df <- df %>% filter(wave == input$wave)
     
     # Filter by age range
