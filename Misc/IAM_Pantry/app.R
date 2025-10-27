@@ -86,9 +86,7 @@ ui <- fluidPage(
     mainPanel(
       tabsetPanel(
         tabPanel("Summary Table", DTOutput("summaryTable")),
-        tabPanel("Bar Plot", plotOutput("completenessBarPlot", height = "600px")),
-        tabPanel("Age Distribution", plotOutput("ageDistribution", height = "600px")),
-        tabPanel("Completeness Over Time", plotOutput("trendPlot", height = "600px"))
+        tabPanel("Bar Plot", plotOutput("completenessBarPlot", height = "600px"))
       )
     )
   )
@@ -238,31 +236,6 @@ server <- function(input, output, session) {
       theme_minimal(base_size = 14) +
       labs(title = "Data Completeness by Measure and Timepoint",
            x = "Data Type", y = y_label)
-  })
-  
-  output$ageDistribution <- renderPlot({
-    req(input$var_to_plot)
-    df <- filtered_data()
-    var <- input$var_to_plot
-    label <- get_label(var)
-    df$has_data <- !is.na(as.character(df[[var]])) & trimws(as.character(df[[var]])) != ""
-    ggplot(df, aes(x = age, fill = has_data)) +
-      geom_histogram(position = "identity", alpha = 0.6, bins = 25) +
-      scale_fill_manual(values = c("#00447b", "#eb851e"), labels = c("Missing", "Available")) +
-      facet_wrap(~ timepoint) +
-      theme_minimal(base_size = 14) +
-      labs(title = paste("Age Distribution by", label, "Completeness"),
-           x = "Age", y = "Count", fill = "Data Status")
-  })
-  
-  output$trendPlot <- renderPlot({
-    df <- completeness()
-    ggplot(df, aes(x = timepoint, y = Percent, group = Label, color = Label)) +
-      geom_line(alpha = 0.5) +
-      geom_point() +
-      theme_minimal(base_size = 14) +
-      labs(title = "Completeness Trends Over Time",
-           x = "Timepoint", y = "% Complete", color = "Measure")
   })
   
   output$downloadTable <- downloadHandler(
