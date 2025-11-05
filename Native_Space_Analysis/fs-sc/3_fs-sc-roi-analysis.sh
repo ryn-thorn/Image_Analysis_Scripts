@@ -3,19 +3,22 @@ set -e
 set -u
 
 ##########################################################
-# usage: 3_fs-sc-roi-analysis.sh /path/to/pyd_base /path/to/output /path/to/diffusion-means.csv
+# usage: 3_fs-sc-roi-analysis.sh /path/to/pyd_base /path/to/output /path/to/diffusion-means.csv /path/to/voxel-counts.csv
 ##########################################################
 
 pyd_base="$1"
-roi_base="$2"       # output folder from Script 1
+roi_base="$2"        # output folder from Script 2
 csv_out="$3"
+csv_vox="$4"
 
-echo "SubjID,ROI," > "$csv_out"
+# Initialize CSV files
+echo "SubjID,ROI" > "$csv_out"
+echo "SubjID,ROI,NumVoxels" > "$csv_vox"
 
-# Get metric files headers (assuming same for all subjects)
-metric_file=$(find "$pyd_base"/*/metrics/ -maxdepth 1 -name "dti_*.nii.gz" | head -n1)
-metric_headers=$(basename $metric_file | sed 's/.nii.gz//')
-metrics=$(ls "$pyd_base"/*/metrics/dti_*.nii.gz "$pyd_base"/*/metrics/dki_*.nii.gz 2>/dev/null | head -n0 | xargs -n1 basename | sed 's/.nii.gz//' | tr '\n' ',' | sed 's/,$//')
+# Get metric headers (assuming same for all subjects)
+metric_files=$(ls "$pyd_base"/*/metrics/dti_*.nii.gz "$pyd_base"/*/metrics/dki_*.nii.gz 2>/dev/null || true)
+metrics=$(for f in $metric_files; do basename "$f" | sed 's/.nii.gz//'; done | tr '\n' ',' | sed 's/,$//')
+
 echo "SubjID,ROI,$metrics" > "$csv_out"
 
 # Loop through subjects
@@ -26,9 +29,9 @@ for subj in "$pyd_base"/*; do
     subj_roi="$roi_base/$subj_name"
     [ -d "$subj_roi" ] || continue
 
-    # Loop through each ROI
-    for roi in "$subj_roi"/*.nii*; do
-        roi_name=$(basename "$roi" | sed 's/.nii.*//')
+    # Loop through thresholded ROIs
+    for roi in "$subj_roi"/*_thr.nii*; do
+        roi_name=$(basename "$roi" | sed 's/_thr.nii.*//')
         line="$subj_name,$roi_name"
 
         # Loop through metrics
@@ -38,8 +41,15 @@ for subj in "$pyd_base"/*; do
             line="$line,$mean_val"
         done
 
+        # Write mean values to CSV
         echo "$line" >> "$csv_out"
+
+        # ---- Voxel count for thresholded ROI ----
+        voxels=$(fslstats "$roi" -V | awk '{print $1}')
+        echo "$subj_name,$roi_name,$voxels" >> "$csv_vox"
     done
 done
 
-echo "CSV created at $csv_out"
+echo "CSV of means created at $csv_out"
+echo "CSV of voxel counts created at $csv_vox"
+

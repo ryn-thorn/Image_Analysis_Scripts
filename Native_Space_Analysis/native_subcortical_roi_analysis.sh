@@ -127,19 +127,39 @@ for subj_dir in "$FS_BASE"/*; do
     fi
 
     # --------------------------------------------
-    # Find raw T1
+    # Find raw T1 (robust version, fixed)
     # --------------------------------------------
-    t1_path=$(find_nii "${RAW_BASE}/${subj}/anat/t1_mprage_sag_p2_iso.nii")
-    if [[ ! -f "$t1_path" ]]; then
+    subj_pattern="${subj}"
+    t1_path=""
+
+    # Search recursively for an anat folder containing a T1 file
+    t1_candidates=$(find "${RAW_BASE}" -type f -path "*/${subj_pattern}*/anat/*" \
+        -iregex '.*t1.*mprage.*\.nii(\.gz)?$' 2>/dev/null || true)
+
+    if [[ -z "$t1_candidates" ]]; then
         echo "Missing raw T1 for $subj" >> "$LOGFILE"
         continue
     fi
 
+    # Handle multiple matches
+    count=$(echo "$t1_candidates" | wc -l | tr -d ' ')
+    if (( count > 1 )); then
+        echo "⚠️  Multiple T1 candidates found for $subj:" >> "$LOGFILE"
+        echo "$t1_candidates" >> "$LOGFILE"
+        # Prefer .nii.gz if available
+        t1_path=$(echo "$t1_candidates" | grep -m1 -E '\.nii\.gz$' || echo "$t1_candidates" | head -n1)
+    else
+        t1_path="$t1_candidates"
+    fi
+
+    # Copy T1 to subject output folder
     if [[ "$FORCE" == true || ! -f "${subj_out}/T1_raw.nii.gz" ]]; then
         cp "$t1_path" "${subj_out}/T1_raw.nii.gz"
     else
         echo "Skipping T1 copy — already exists"
     fi
+
+
 
     # --------------------------------------------
     # Register FS T1 to raw T1

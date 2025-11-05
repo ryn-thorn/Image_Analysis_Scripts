@@ -1,6 +1,7 @@
 #!/bin/bash
 # ------------------------------------------------------------------
 # Extract bilateral subcortical ROIs from multiple Freesurfer recon-all outputs
+# Skips subjects if ROIs already exist
 # ------------------------------------------------------------------
 # Usage:
 #   ./1_fs-sc-roi-isolation.sh /path/to/fs_base
@@ -32,6 +33,12 @@ for subj_dir in "$fs_base"/*; do
 
     if [ ! -f "$aseg" ]; then
         echo "Skipping $subj_name: aseg.mgz not found."
+        continue
+    fi
+
+    # Skip if ROIs already exist
+    if [ -d "$outdir" ] && [ "$(ls -A "$outdir"/*.nii.gz 2>/dev/null)" ]; then
+        echo "Skipping $subj_name: ROIs already exist."
         continue
     fi
 
