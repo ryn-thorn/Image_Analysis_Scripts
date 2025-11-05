@@ -11,7 +11,7 @@ SRC_NII_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/03_nii
 SRC_DICOM_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/02_dicom"
 OUT_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS"
 
-SESSIONS=("Y0" "Y2" "Y3" "Y4" "Y6")
+SESSIONS=("Y0" "Y2" "Y4" "Y6")
 MODS=("anat" "dwi" "fmri" "vista" "other")
 
 declare -A SUFFIX_MAP
