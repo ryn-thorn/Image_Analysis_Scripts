@@ -126,40 +126,45 @@ for subj_dir in "$FS_BASE"/*; do
         echo "Skipping mri_convert (aparc+aseg.mgz) — already exists"
     fi
 
-    # --------------------------------------------
-    # Find raw T1 (robust version, fixed)
-    # --------------------------------------------
-    subj_pattern="${subj}"
-    t1_path=""
-
-    # Search recursively for an anat folder containing a T1 file
-    t1_candidates=$(find "${RAW_BASE}" -type f -path "*/${subj_pattern}*/anat/*" \
-        -iregex '.*t1.*mprage.*\.nii(\.gz)?$' 2>/dev/null || true)
-
-    if [[ -z "$t1_candidates" ]]; then
-        echo "Missing raw T1 for $subj" >> "$LOGFILE"
-        continue
-    fi
-
-    # Handle multiple matches
-    count=$(echo "$t1_candidates" | wc -l | tr -d ' ')
-    if (( count > 1 )); then
-        echo "⚠️  Multiple T1 candidates found for $subj:" >> "$LOGFILE"
-        echo "$t1_candidates" >> "$LOGFILE"
-        # Prefer .nii.gz if available
-        t1_path=$(echo "$t1_candidates" | grep -m1 -E '\.nii\.gz$' || echo "$t1_candidates" | head -n1)
-    else
-        t1_path="$t1_candidates"
-    fi
-
-    # Copy T1 to subject output folder
-    if [[ "$FORCE" == true || ! -f "${subj_out}/T1_raw.nii.gz" ]]; then
-        cp "$t1_path" "${subj_out}/T1_raw.nii.gz"
-    else
-        echo "Skipping T1 copy — already exists"
-    fi
-
-
+	# --------------------------------------------
+	# Find raw T1 (robust, session-agnostic)
+	# --------------------------------------------
+	t1_path=""
+	t1_candidates=()
+	
+	# Search recursively under the subject directory for any anat folder
+	while IFS= read -r f; do
+		fname=$(basename "$f")
+		# Only consider files that look like T1
+		if [[ "$fname" =~ t1.*mprage.*\.nii ]]; then
+			t1_candidates+=("$f")
+		fi
+	done < <(find "${RAW_BASE}" -type f -path "*/${subj}*/anat/*" 2>/dev/null)
+	
+	if [[ ${#t1_candidates[@]} -eq 0 ]]; then
+		echo "Missing raw T1 for $subj" >> "$LOGFILE"
+		continue
+	fi
+	
+	# Prefer .nii.gz over .nii if multiple matches
+	for f in "${t1_candidates[@]}"; do
+		if [[ "$f" == *.nii.gz ]]; then
+			t1_path="$f"
+			break
+		fi
+	done
+	
+	# If no .nii.gz found, pick the first .nii
+	if [[ -z "$t1_path" ]]; then
+		t1_path="${t1_candidates[0]}"
+	fi
+	
+	# Copy T1 to subject output folder
+	if [[ "$FORCE" == true || ! -f "${subj_out}/T1_raw.nii.gz" ]]; then
+		cp "$t1_path" "${subj_out}/T1_raw.nii.gz"
+	else
+		echo "Skipping T1 copy — already exists"
+	fi
 
     # --------------------------------------------
     # Register FS T1 to raw T1
