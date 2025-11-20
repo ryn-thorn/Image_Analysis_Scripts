@@ -1,24 +1,11 @@
 #!/usr/bin/env python
 """
-organize_iam_bids_better.py
-
-Purpose:
-  - Convert zipped DICOM archives into a BIDS-style folder layout for the IAM dataset.
-  - Fixed detection for Siemens MR.* filenames (no .dcm extension).
-  - Uses dcm2niix for conversion and JSON sidecars for series classification.
-
-Usage:
-  python organize_iam_bids_better.py [--overwrite] [--dry-run]
-
-Defaults (hardcoded for your request):
-  INPUT_ZIP_DIR  = /Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/bids_test
-  OUTPUT_BIDS_DIR = /Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS
-
-Requirements:
-  pip install pydicom tqdm
-  dcm2niix installed and available in PATH
+IAM_BIDS.py  — Clean regenerated script with:
+  • zip → extract → DICOM → dcm2niix → BIDS folder layout
+  • BIDS renaming rules integrated
+  • unified TSV logging (conversion + rename + unmatched)
+  • consistent formatting and indentation
 """
-
 import argparse
 import json
 import os
@@ -35,14 +22,14 @@ import pydicom
 from tqdm import tqdm
 
 # ---------------- CONFIG ----------------
-INPUT_ZIP_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/bids_test")
+INPUT_ZIP_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/00_zipped_archive")
 OUTPUT_BIDS_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS")
 LOG_PATH = OUTPUT_BIDS_DIR / "bids_conversion_log.tsv"
 
 # Session map
 SES_MAP = {
     "": "ses-Y0",
-    "A": "ses-Y0", "a": "ses-Y0",  # A duplicates baseline and should keep suffix when forming subject
+    "A": "ses-Y0", "a": "ses-Y0",
     "b": "ses-Y2",
     "c": "ses-Y4",
     "d": "ses-Y6",
@@ -53,23 +40,49 @@ SESSION_SUBFOLDERS = ["anat", "dwi", "fmap", "fmri", "pet", "mrs", "vista", "oth
 
 # Series classification rules (match SeriesDescription from JSON/ DICOM)
 CLASS_RULES = [
-    # T1
     (re.compile(r"t1|mprage|spgr", re.I), "anat"),
-    # T2
     (re.compile(r"t2(?![a-z0-9])|t2w|flair", re.I), "anat"),
-    # Diffusion (DKI, FBI, DWI, DTI)
-    (re.compile(r"dki|fbi|diff|dwi|dti|tde", re.I), "dwi"),
-    # Functional MRI
-    (re.compile(r"task|resting[_-]?state|rest\b|func|bold|fmri", re.I), "fmri"),
-    # Field maps
+    (re.compile(r"dki|fbi|diff|dwi|dti", re.I), "dwi"),
+    (re.compile(r"task|resting[_-]?state|rest\b|func|bold|fmri|PA", re.I), "fmri"),
     (re.compile(r"field[_-]?mapping|fmap|phasediff|magnitude|topup|se_epi", re.I), "fmap"),
-    # VISTA
     (re.compile(r"vista|vista_ref", re.I), "vista"),
 ]
 
-
 # ID parsing regex to capture IAM_ or 1AM_ variants, allow hyphen or underscore, optional suffix letter.
 ID_RE = re.compile(r"[I1]AM[_-]?0*([0-9]+)([A-Za-z]?)")
+
+# ----------- BIDS RENAMING MAP -----------
+# Each rule matches the original base (without extension) and returns the BIDS suffix.
+# The final filename will be: {subject}_{session}_{bids_suffix}{ext}
+BIDS_NAME_RULES = [
+    (re.compile(r"^AAHead_Scout_32ch-head-coil(_.*)?$", re.I), "AAHead_Scout_32ch-head-coil"),
+    (re.compile(r"^DKI_30_Dir_i", re.I), "DKI_30dir"),
+    (re.compile(r"^DKI_30_Dir_TOP_UP_PA$", re.I), "DKI_30dir_TOPUP"),
+    (re.compile(r"^DKI_30_Dir$", re.I), "DKI_30dir"),
+    (re.compile(r"^DKI_BIPOLAR_2\.5mm_64dir_50slices_TOP_UP_PA$", re.I), "DKI_64dir_TOPUP"),
+    (re.compile(r"^DKI_BIPOLAR_2\.5mm_64dir_50slices$", re.I), "DKI_64dir"),
+    (re.compile(r"^DKI_MONOPOLAR_3\.0mm_30dir_42slices_topup", re.I), "DKI_30dir_TOPUP"),
+    (re.compile(r"^DKI_MONOPOLAR_3\.0mm_30dir_42slices$", re.I), "DKI_30dir"),
+    (re.compile(r"^FBI_", re.I), "FBI"),
+    (re.compile(r"^gre_field_mapping_e1$", re.I), "field-map_e1"),
+    (re.compile(r"^gre_field_mapping_e2_ph$|^gre_field_mapping_e2$", re.I), "field-map_e2ph"),
+    (re.compile(r"^sms3_3\.0iso_PA", re.I), "PA"),
+    (re.compile(r"^sms3_3\.0iso_Resting_State_1$", re.I), "Resting_1"),
+    (re.compile(r"^sms3_3\.0iso_Resting_State_2_e1$", re.I), "Resting_2_e1"),
+    (re.compile(r"^sms3_3\.0iso_Resting_State_2$", re.I), "Resting_2"),
+    (re.compile(r"^sms3_3\.0iso_Task$", re.I), "Task"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Cor$", re.I), "T1w_Cor"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Tra$", re.I), "T1w_Tra"),
+    (re.compile(r"^t1_mprage_sag_p2_iso$", re.I), "T1w"),
+    (re.compile(r"^t2_tse_dark-fluid_tra$", re.I), "T2w"),
+    (re.compile(r"^t2_tse_dark-fluid_traa$", re.I), "T2wa"),
+    (re.compile(r"^t2_tse_dark-fluid_tra_e1$", re.I), "T2w"),
+    (re.compile(r"^TDE_ep2d_diff_brad300_off_e1$", re.I), "TDE_off"),
+    (re.compile(r"^TDE_ep2d_diff_brad300$", re.I), "TDE"),
+    (re.compile(r"^ViSTa_2\.0mm$", re.I), "ViSTa"),
+    (re.compile(r"^ViSTa_2\.0mma$", re.I), "ViSTaa"),
+    (re.compile(r"^ViSTa_REF_2\.0mm_FA28$", re.I), "ViSTa_REF"),
+]
 
 # ---------------- Helpers ----------------
 def write_log_row(ts, zipname, raw_pid, normalized_subject, session, outpath, status, note=""):
@@ -175,6 +188,48 @@ def run_dcm2niix(dicom_dir: Path, out_dir: Path, compress=True):
     except FileNotFoundError as e:
         return 127, str(e)
 
+# ---------------- BIDS rename helper ----------------
+def apply_bids_rename(fpath: Path, subject: str, session: str):
+    """
+    Given a file path (Path) that already exists on disk, try to rename it using
+    BIDS_NAME_RULES. Returns (renamed_bool, new_path_or_original_path, note).
+    - subject should already be like 'sub-1002'
+    - session should already be like 'ses-Y4'
+    """
+    name = fpath.name
+    # detect .nii.gz
+    if name.lower().endswith('.nii.gz'):
+        true_stem = name[:-7]
+        ext = '.nii.gz'
+    else:
+        true_stem = fpath.stem
+        ext = fpath.suffix
+
+    for pat, bids_suffix in BIDS_NAME_RULES:
+        if pat.match(true_stem):
+            new_base = f"{subject}_{session}_{bids_suffix}"
+            new_name = new_base + ext
+            new_path = fpath.with_name(new_name)
+            # avoid clobbering existing files
+            if new_path.exists():
+                # try to append a numeric suffix
+                i = 1
+                while True:
+                    alt = fpath.with_name(f"{new_base}_dup{i}{ext}")
+                    if not alt.exists():
+                        new_path = alt
+                        break
+                    i += 1
+            try:
+                fpath.rename(new_path)
+                note = f"RENAMED:{name}=>{new_path.name}"
+                return True, new_path, note
+            except Exception as e:
+                return False, fpath, f"RENAME_FAILED:{e}"
+
+    # no rule matched
+    return False, fpath, "NO_RENAME_RULE_MATCH"
+
 # ---------------- Main zip processing ----------------
 def process_zip(zip_path: Path, overwrite=False, dry_run=False):
     ts = datetime.utcnow().isoformat()
@@ -233,19 +288,15 @@ def process_zip(zip_path: Path, overwrite=False, dry_run=False):
         DATA_EXTS = {".nii", ".gz", ".json", ".bval", ".bvec", ".tsv"}
 
         target_session_has_files = any(
-            p.is_file() and p.suffix.lower() in DATA_EXTS
+            p.is_file() and (p.suffix.lower() in DATA_EXTS or p.name.lower().endswith('.nii.gz'))
             for p in session_dir.rglob("*")
         )
 
         if target_session_has_files and not overwrite:
             status = "SKIPPED_SESSION_EXISTS"
-            write_log_row(
-                ts, zipname, raw_pid, normalized_subj, session,
-                str(session_dir), status,
-                "session contains data files; use --overwrite to force"
-            )
+            write_log_row(ts, zipname, raw_pid, normalized_subj, session,
+                          str(session_dir), status, "session contains data files; use --overwrite to force")
             return
-
 
         if dry_run:
             status = "DRY_RUN_OK"
@@ -275,21 +326,14 @@ def process_zip(zip_path: Path, overwrite=False, dry_run=False):
             return
 
         # 5) For each output (prefer JSON sidecar to classify; if no JSON use filename)
-        moved_any = False
-        for outf in produced:
-            # we care about pairs (.nii.gz and .json). For each pair, we use the .json to classify,
-            # but we'll move all files that share the same basename (without extension).
-            stem = outf.name
-            # reduce to basename without compression/extension for pair grouping:
-            # e.g., "T1_1-1.json" -> base key "T1_1-1"
-            basekey = re.sub(r"\.nii(\.gz)?$|\.json$|\.bval$|\.bvec$", "", stem, flags=re.I)
-
         # Build mapping basekey -> list of files
         files_by_base = {}
         for p in produced:
             basekey = re.sub(r"\.nii(\.gz)?$|\.json$|\.bval$|\.bvec$", "", p.name, flags=re.I)
             files_by_base.setdefault(basekey, []).append(p)
 
+        # Process each group
+        moved_any = False
         for basekey, files in files_by_base.items():
             # prefer reading JSON for series description
             series_desc = None
@@ -297,7 +341,6 @@ def process_zip(zip_path: Path, overwrite=False, dry_run=False):
             if json_file:
                 try:
                     j = json.loads(json_file.read_text())
-                    # some JSONs use 'SeriesDescription' or 'SeriesDescription' in different casing
                     series_desc = j.get("SeriesDescription") or j.get("series_description") or j.get("ProtocolName") or j.get("SeriesDescriptionInternal")
                 except Exception:
                     series_desc = None
@@ -317,6 +360,15 @@ def process_zip(zip_path: Path, overwrite=False, dry_run=False):
                     # if same file already exists, append suffix to avoid clobber
                     dest = final_target / (f.stem + "_dup" + f.suffix)
                 shutil.move(str(f), str(dest))
+
+                # Attempt BIDS rename and log the result into the single TSV log
+                renamed, new_path, note = apply_bids_rename(dest, normalized_subj, session)
+                if renamed:
+                    write_log_row(datetime.utcnow().isoformat(), zipname, raw_pid, normalized_subj, session, str(new_path), "RENAMED", note)
+                else:
+                    # note will be "NO_RENAME_RULE_MATCH" or failure detail
+                    write_log_row(datetime.utcnow().isoformat(), zipname, raw_pid, normalized_subj, session, str(dest), "NO_RENAME_RULE_MATCH", note)
+
                 moved_any = True
 
         # cleanup dcm2niix tmp dir (it should be empty now)
@@ -345,7 +397,7 @@ def process_zip(zip_path: Path, overwrite=False, dry_run=False):
 
 # ---------------- CLI & Runner ----------------
 def main():
-    parser = argparse.ArgumentParser(description="Organize IAM zipped dicoms into BIDS-like layout")
+    parser = argparse.ArgumentParser(description="Organize IAM zipped dicoms into BIDS-like layout with renaming")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing session data (dangerous).")
     parser.add_argument("--dry-run", action="store_true", help="Do everything but do not call dcm2niix or move files.")
     args = parser.parse_args()
