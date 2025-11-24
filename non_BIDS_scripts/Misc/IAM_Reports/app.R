@@ -4,6 +4,7 @@ library(tidyr)
 library(stringr)
 library(ggplot2)
 library(DT)
+library(janitor)
 
 ui <- fluidPage(
   titlePanel("Demographics & Cognition Explorer"),
@@ -39,30 +40,42 @@ server <- function(input, output, session) {
   # ---------- Clean Demographics ----------
   clean_demographics <- reactive({
     req(input$demographics)
-    demo <- read.csv(input$demographics$datapath, stringsAsFactors = FALSE)
+    demo <- read.csv(input$demographics$datapath, stringsAsFactors = FALSE) %>%
+      janitor::clean_names()
     
+    # Standardize ID column
+    if ("study_id" %in% names(demo)) {
+      demo$study_id <- demo$study_id
+    } else if ("record_id" %in% names(demo)) {
+      demo$study_id <- demo$record_id
+    }
+    
+    # Determine sex
     demo <- demo %>%
       mutate(
-        Wave = `Is this participant part of Wave 1 or Wave 2?`,
-        Sex = case_when(`7. Subject's sex:` %in% c("1 Male","2 Male","Male") ~ "Male",
-                        `7. Subject's sex:` %in% c("1 Female","2 Female","Female") ~ "Female",
-                        TRUE ~ NA_character_),
-        Race = case_when(
-          Wave == "Wave 1" & `9. What does subject report as his or her race?` != "" ~ `9. What does subject report as his or her race?`,
-          Wave == "Wave 2" ~ paste(
-            c(`White`,`Black or African American`,`American Indian or Alaska Native (AIAN)`,
-              `Native Hawaiian or other Pacific Islander`,`Asian`,`Hispanic`)[
-                c(`White`,`Black or African American`,`American Indian or Alaska Native (AIAN)`,
-                  `Native Hawaiian or other Pacific Islander`,`Asian`,`Hispanic`) == "Yes"
+        wave = is_this_participant_part_of_wave_1_or_wave_2,
+        sex = case_when(
+          x7_subject_s_sex %in% c("1 Male","2 Male","Male","1","1 male") ~ "Male",
+          x7_subject_s_sex %in% c("1 Female","2 Female","Female","2","2 female") ~ "Female",
+          TRUE ~ NA_character_
+        ),
+        # Race logic
+        race = case_when(
+          wave == "Wave 1" & x9_what_does_subject_report_as_his_or_her_race != "" ~ x9_what_does_subject_report_as_his_or_her_race,
+          wave == "Wave 2" ~ paste(
+            c(white, black_or_african_american, american_indian_or_alaska_native_aian,
+              native_hawaiian_or_other_pacific_islander, asian, hispanic)[
+                c(white, black_or_african_american, american_indian_or_alaska_native_aian,
+                  native_hawaiian_or_other_pacific_islander, asian, hispanic) == "Yes"
               ], collapse = ", "
           ),
           TRUE ~ NA_character_
         ),
-        Race = ifelse(str_detect(Race, ","), "Multiracial", Race),
-        Year = 0,
-        Cognition = "Normal"   # Year 0 has no MCI data
+        race = ifelse(str_detect(race, ","), "Multiracial", race),
+        year = 0,
+        cognition = "Normal"
       ) %>%
-      select(StudyID = `Study ID`, Wave, Sex, Race, Year, Cognition)
+      select(study_id, wave, sex, race, year, cognition)
     
     demo
   })
@@ -72,18 +85,30 @@ server <- function(input, output, session) {
     req(input$dx_y2, input$dx_y4, input$dx_y6)
     
     process_dx <- function(file, year) {
-      df <- read.csv(file$datapath, stringsAsFactors = FALSE)
+      df <- read.csv(file$datapath, stringsAsFactors = FALSE) %>%
+        janitor::clean_names()
+      
+      # Standardize ID column
+      if ("record_id" %in% names(df)) {
+        df$study_id <- df$record_id
+      } else if ("study_id" %in% names(df)) {
+        df$study_id <- df$study_id
+      }
+      
+      # Cognition column detection
+      normal_col <- names(df)[str_detect(names(df), "does_the_subject_have_normal_cognition")]
+      mci_cols <- names(df)[str_detect(names(df), "^x5[a-e]")]
+      
       df <- df %>%
         mutate(
-          StudyID = str_remove(`Record ID`, "[b-d]$"),
-          Year = year,
-          Cognition = case_when(
-            `2. Does the subject have normal cognition (global CDR=0 and/or neuropsychological testing within normal range) and normal behavior (i.e., the subject does not exhibit behavior sufficient to diagnose MCI or dementia due to FTLD or LBD)?` %in% c("0 No","0 No   <b>(CONTINUE TO QUESTION 3)</b>") ~ "Normal",
-            rowSums(select(., starts_with("5a"), starts_with("5b"), starts_with("5c"), starts_with("5d"), starts_with("5e")) == "1 Present", na.rm = TRUE) > 0 ~ "MCI",
+          year = year,
+          cognition = case_when(
+            !!sym(normal_col) %in% c("0 No", "No") ~ "Normal",
+            rowSums(select(., all_of(mci_cols)) == "1 Present", na.rm = TRUE) > 0 ~ "MCI",
             TRUE ~ NA_character_
           )
         ) %>%
-        select(StudyID, Year, Cognition)
+        select(study_id, year, cognition)
       df
     }
     
@@ -98,18 +123,18 @@ server <- function(input, output, session) {
   merged_data <- reactive({
     demo <- clean_demographics()
     dx <- clean_dx()
-    full_join(demo, dx, by = c("StudyID","Year")) %>%
-      group_by(StudyID) %>%
-      fill(Wave, Sex, Race, .direction = "downup") %>%
+    full_join(demo, dx, by = c("study_id","year")) %>%
+      group_by(study_id) %>%
+      fill(wave, sex, race, .direction = "downup") %>%
       ungroup()
   })
   
   # ---------- Apply Filters ----------
   filtered_data <- reactive({
     df <- merged_data()
-    if(input$filter_wave != "All") df <- df %>% filter(Wave == input$filter_wave)
-    if(input$filter_sex != "All") df <- df %>% filter(Sex == input$filter_sex)
-    if(input$filter_race != "All") df <- df %>% filter(Race == input$filter_race)
+    if(input$filter_wave != "All") df <- df %>% filter(wave == input$filter_wave)
+    if(input$filter_sex != "All") df <- df %>% filter(sex == input$filter_sex)
+    if(input$filter_race != "All") df <- df %>% filter(race == input$filter_race)
     df
   })
   
@@ -119,46 +144,56 @@ server <- function(input, output, session) {
     
     race_levels <- c("White","Black","Asian","Native Hawaiian/PI","AIAN","Hispanic","Multiracial")
     df <- df %>%
-      mutate(Race = case_when(
-        str_detect(Race, "White") ~ "White",
-        str_detect(Race, "Black") ~ "Black",
-        str_detect(Race, "Asian") ~ "Asian",
-        str_detect(Race, "Native Hawaiian") ~ "Native Hawaiian/PI",
-        str_detect(Race, "AIAN") ~ "AIAN",
-        str_detect(Race, "Hispanic") ~ "Hispanic",
-        Race == "Multiracial" ~ "Multiracial",
+      mutate(race = case_when(
+        str_detect(race, "White") ~ "White",
+        str_detect(race, "Black") ~ "Black",
+        str_detect(race, "Asian") ~ "Asian",
+        str_detect(race, "Native Hawaiian") ~ "Native Hawaiian/PI",
+        str_detect(race, "AIAN") ~ "AIAN",
+        str_detect(race, "Hispanic") ~ "Hispanic",
+        race == "Multiracial" ~ "Multiracial",
         TRUE ~ NA_character_
       ))
     
     summarize_wave <- function(wave_name, df_wave) {
-      baseline <- df_wave %>%
-        filter(Year == 0) %>%
-        group_by(Sex, Race) %>%
-        summarize(Total = n(), .groups = "drop") %>%
-        complete(Sex = c("Male","Female"), Race = race_levels, fill = list(Total = 0))
+      # Ensure cognition column exists
+      if(!"cognition" %in% names(df_wave)) {
+        df_wave <- df_wave %>% mutate(cognition = NA_character_)
+      }
       
+      race_levels <- c("White","Black","Asian","Native Hawaiian/PI","AIAN","Hispanic","Multiracial")
+      
+      # Baseline counts
+      baseline <- df_wave %>%
+        filter(year == 0) %>%
+        group_by(sex, race) %>%
+        summarize(Total = n(), .groups = "drop") %>%
+        complete(sex = c("Male","Female"), race = race_levels, fill = list(Total = 0))
+      
+      # MCI counts
       mci_years <- df_wave %>%
-        filter(Cognition == "MCI") %>%
-        group_by(Year, Sex, Race) %>%
+        filter(!is.na(cognition) & cognition == "MCI") %>%
+        group_by(year, sex, race) %>%
         summarize(MCI = n(), .groups = "drop") %>%
-        complete(Year = c(2,4,6), Sex = c("Male","Female"), Race = race_levels, fill = list(MCI = 0))
+        complete(year = c(2,4,6), sex = c("Male","Female"), race = race_levels, fill = list(MCI = 0))
       
       total_mci <- mci_years %>%
-        group_by(Sex, Race) %>%
+        group_by(sex, race) %>%
         summarize(Total_MCI = sum(MCI, na.rm = TRUE), .groups = "drop")
       
       table_wave <- baseline %>%
-        left_join(mci_years %>% pivot_wider(names_from = Year, values_from = MCI, names_prefix = "Y"), by = c("Sex","Race")) %>%
-        left_join(total_mci, by = c("Sex","Race")) %>%
-        arrange(Sex, factor(Race, levels = race_levels)) %>%
+        left_join(mci_years %>% pivot_wider(names_from = year, values_from = MCI, names_prefix = "Y"), by = c("sex","race")) %>%
+        left_join(total_mci, by = c("sex","race")) %>%
+        arrange(sex, factor(race, levels = race_levels)) %>%
         mutate(Wave = wave_name) %>%
-        select(Wave, Sex, Race, Total, Y2, Y4, Y6, Total_MCI)
+        select(Wave, sex, race, Total, Y2, Y4, Y6, Total_MCI)
       
       table_wave
     }
     
-    wave1 <- summarize_wave("Wave 1", df %>% filter(Wave == "Wave 1"))
-    wave2 <- summarize_wave("Wave 2", df %>% filter(Wave == "Wave 2"))
+    
+    wave1 <- summarize_wave("Wave 1", df %>% filter(wave == "Wave 1"))
+    wave2 <- summarize_wave("Wave 2", df %>% filter(wave == "Wave 2"))
     all_waves <- summarize_wave("All Waves", df)
     
     final_table <- bind_rows(wave1, wave2, all_waves)
@@ -168,10 +203,10 @@ server <- function(input, output, session) {
   
   # ---------- Demographics Plot ----------
   output$demo_plot <- renderPlot({
-    df <- filtered_data() %>% filter(Year == 0)
-    ggplot(df, aes(x = Race, fill = Sex)) +
+    df <- filtered_data() %>% filter(year == 0)
+    ggplot(df, aes(x = race, fill = sex)) +
       geom_bar(position = "dodge") +
-      facet_wrap(~Wave) +
+      facet_wrap(~wave) +
       labs(title = "Baseline Demographics by Sex and Race", y = "Count") +
       theme_minimal() +
       theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -180,15 +215,15 @@ server <- function(input, output, session) {
   # ---------- MCI Progression Plot ----------
   output$mci_plot <- renderPlot({
     df <- filtered_data() %>%
-      filter(Cognition == "MCI") %>%
-      group_by(Year, Sex, Race) %>%
+      filter(cognition == "MCI") %>%
+      group_by(year, sex, race) %>%
       summarize(MCI_count = n(), .groups = "drop") %>%
-      mutate(Race = factor(Race, levels = c("White","Black","Asian","Native Hawaiian/PI","AIAN","Hispanic","Multiracial")))
+      mutate(race = factor(race, levels = c("White","Black","Asian","Native Hawaiian/PI","AIAN","Hispanic","Multiracial")))
     
-    ggplot(df, aes(x = Year, y = MCI_count, color = Sex, group = Sex)) +
+    ggplot(df, aes(x = year, y = MCI_count, color = sex, group = sex)) +
       geom_line() +
       geom_point() +
-      facet_wrap(~Race) +
+      facet_wrap(~race) +
       labs(title = "MCI Progression Over Time by Sex and Race", y = "MCI Count") +
       theme_minimal()
   })
