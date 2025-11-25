@@ -29,21 +29,20 @@ LOG_PATH = OUTPUT_BIDS_DIR / "bids_conversion_log.tsv"
 # Session map
 SES_MAP = {
     "": "ses-Y0",
-    "A": "ses-Y0", "a": "ses-Y0",
     "b": "ses-Y2",
     "c": "ses-Y4",
     "d": "ses-Y6",
 }
 
 # Subfolders inside each session
-SESSION_SUBFOLDERS = ["anat", "dwi", "fmap", "fmri", "pet", "mrs", "vista", "other"]
+SESSION_SUBFOLDERS = ["anat", "dwi", "fmap", "func", "pet", "mrs", "vista", "other"]
 
 # Series classification rules (match SeriesDescription from JSON/ DICOM)
 CLASS_RULES = [
     (re.compile(r"t1|mprage|spgr", re.I), "anat"),
     (re.compile(r"t2(?![a-z0-9])|t2w|flair", re.I), "anat"),
     (re.compile(r"dki|fbi|diff|dwi|dti", re.I), "dwi"),
-    (re.compile(r"task|resting[_-]?state|rest\b|func|bold|fmri|PA", re.I), "fmri"),
+    (re.compile(r"task|resting[_-]?state|rest\b|func|bold|fmri|PA", re.I), "func"),
     (re.compile(r"field[_-]?mapping|fmap|phasediff|magnitude|topup|se_epi", re.I), "fmap"),
     (re.compile(r"vista|vista_ref", re.I), "vista"),
 ]
@@ -56,6 +55,7 @@ ID_RE = re.compile(r"[I1]AM[_-]?0*([0-9]+)([A-Za-z]?)")
 # The final filename will be: {subject}_{session}_{bids_suffix}{ext}
 BIDS_NAME_RULES = [
     (re.compile(r"^AAHead_Scout_32ch-head-coil(_.*)?$", re.I), "AAHead_Scout_32ch-head-coil"),
+    (re.compile(r"^AAHead_Scout_32ch-head-coila(_.*)?$", re.I), "AAHead_Scout_32ch-head-coil"),
     (re.compile(r"^DKI_30_Dir_i", re.I), "DKI_30dir"),
     (re.compile(r"^DKI_30_Dir_TOP_UP_PA$", re.I), "DKI_30dir_TOPUP"),
     (re.compile(r"^DKI_30_Dir$", re.I), "DKI_30dir"),
@@ -82,7 +82,56 @@ BIDS_NAME_RULES = [
     (re.compile(r"^ViSTa_2\.0mm$", re.I), "ViSTa"),
     (re.compile(r"^ViSTa_2\.0mma$", re.I), "ViSTaa"),
     (re.compile(r"^ViSTa_REF_2\.0mm_FA28$", re.I), "ViSTa_REF"),
+    (re.compile(r"^DKI_30_Dir_e1$", re.I), "DKI_30dir"),
+    (re.compile(r"^DKI_30_Dir_TOP_UP_PA_e1$", re.I), "DKI_30dir_TOPUP"),
+    (re.compile(r"^DKI_30_Dir_TOP_UP_PA_i00001$", re.I), "DKI_30dir_TOPUP"),
+    (re.compile(r"^DKI_30_Dir_TOP_UP_PA_i00001$", re.I), "DKI_30dir_TOPUP"),
+    (re.compile(r"^DKI_BIPOLAR_2\.5mm_64dir_50slices_e1$", re.I), "DKI_64dir"),
+    (re.compile(r"^DKI_BIPOLAR_2\.5mm_64dir_50slices_i00001$", re.I), "DKI_64dir"),
+    (re.compile(r"^DKI_BIPOLAR_2\.5mm_64dir_50slices_TOP_UP_PA_e1$", re.I), "DKI_64dir_TOPUP"),
+    (re.compile(r"^DKI_BIPOLAR_2\.5mm_64dir_50slices_TOP_UP_PA_i00001$", re.I), "DKI_64dir_TOPUP"),
+    (re.compile(r"^DKI_BIPOLAR_2\.5mm_64dir_50slices_TOP_UP_PAa$", re.I), "DKI_64dir_TOPUP"),
+    (re.compile(r"^DKI_BIPOLAR_2\.5mm_64dir_50slicesa$", re.I), "DKI_64dir"),
+    (re.compile(r"^DKI_BIPOLAR_2\.5mm_64dir_50slicesb$", re.I), "DKI_64dir"),
+    (re.compile(r"^DKI_MONOPOLAR_3\.0mm_30dir_42slices_e1$", re.I), "DKI_30dir"),
+    (re.compile(r"^DKI_MONOPOLAR_3\.0mm_30dir_42slices_i00001$", re.I), "DKI_30dir"),
+    (re.compile(r"^gre_field_mapping_e1_i00001$", re.I), "field_map_e1"),
+    (re.compile(r"^gre_field_mapping_e1a$", re.I), "field_map_e1"),
+    (re.compile(r"^gre_field_mapping_e2_i00001$", re.I), "field_map_e2"),
+    (re.compile(r"^gre_field_mapping_e2_pha$", re.I), "field_map_e2"),
+    (re.compile(r"^gre_field_mapping_e2a$", re.I), "field_map_e2"),
+    (re.compile(r"^gre_field_mapping_i00001_e2_ph$", re.I), "field_map_e2_ph"),
+    (re.compile(r"^sms3_3\.0iso_Resting_PA$", re.I), "Resting_1"),
+    (re.compile(r"^sms3_3\.0iso_Resting_State_1_e1$", re.I), "Resting_1"),
+    (re.compile(r"^sms3_3\.0iso_Resting_State_1_i00001$", re.I), "Resting_1"),
+    (re.compile(r"^sms3_3\.0iso_Resting_State_1a$", re.I), "Resting_1"),
+    (re.compile(r"^sms3_3\.0iso_Resting_State_2_i00001$", re.I), "Resting_2"),
+    (re.compile(r"^sms3_3\.0iso_Task_e1$", re.I), "Task"),
+    (re.compile(r"^sms3_3\.0iso_Task_i00001$", re.I), "Task"),
+    (re.compile(r"^sms3_3\.0iso_Taska$", re.I), "Task"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_e1$", re.I), "T1w"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_i00001$", re.I), "T1w"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Cor_e1$", re.I), "T1w_Cor"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Cor_i00001$", re.I), "T1w_Cor"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Cora$", re.I), "T1w_Cor"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Corb$", re.I), "T1w_Cor"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Tra_e1$", re.I), "T1w_Tra"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Tra_i00001$", re.I), "T1w_Tra"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Traa$", re.I), "T1w_Tra"),
+    (re.compile(r"^t1_mprage_sag_p2_iso_MPR_Trab$", re.I), "T1w_Tra"),
+    (re.compile(r"^t1_mprage_sag_p2_isoa$", re.I), "T1w"),
+    (re.compile(r"^t1_mprage_sag_p2_isob$", re.I), "T1w"),
+    (re.compile(r"^t2_tse_dark-fluid_tra_i00001$", re.I), "T2w"),
+    (re.compile(r"^t2_tse_dark-fluid_trab$", re.I), "T2w"),
+    (re.compile(r"^TDE_ep2d_diff_brad300_e1$", re.I), "TDE"),
+    (re.compile(r"^TDE_ep2d_diff_brad300_i00001$", re.I), "TDE"),
+    (re.compile(r"^TDE_ep2d_diff_brad300_off$", re.I), "TDE_off"),
+    (re.compile(r"^TDE_ep2d_diff_brad300_off_i00001$", re.I), "TDE_off"),
+    (re.compile(r"^TDE_ep2d_diff_brad300a$", re.I), "TDE"),
+    (re.compile(r"^ViSTa_2\.0mm_i00001$", re.I), "ViSTa"),
+    (re.compile(r"^ViSTa_REF_2\.0mm_FA28_i00001$", re.I), "ViSTa_REF"),
 ]
+
 
 # ---------------- Helpers ----------------
 def write_log_row(ts, zipname, raw_pid, normalized_subject, session, outpath, status, note=""):
