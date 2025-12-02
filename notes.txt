@@ -1,0 +1,5 @@
+'/run/user/1000/gvfs/smb-share:server=10.177.132.215,share=vdrive/helpern_share/Image_Analysis_Scripts/BIDS_Compliant_Scripts/Segmentation/hippocampal-subfields.sh' '/run/user/1000/gvfs/smb-share:server=10.177.132.215,share=vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/freesurfer/freesurfer_7.2' 
+Using base directory: /run/user/1000/gvfs/smb-share:server=10.177.132.215,share=vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/freesurfer/freesurfer_7.2
+basename: missing operand
+Try 'basename --help' for more information.
+
