@@ -1,5 +1,45 @@
-'/run/user/1000/gvfs/smb-share:server=10.177.132.215,share=vdrive/helpern_share/Image_Analysis_Scripts/BIDS_Compliant_Scripts/Segmentation/hippocampal-subfields.sh' '/run/user/1000/gvfs/smb-share:server=10.177.132.215,share=vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/freesurfer/freesurfer_7.2' 
-Using base directory: /run/user/1000/gvfs/smb-share:server=10.177.132.215,share=vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/freesurfer/freesurfer_7.2
-basename: missing operand
-Try 'basename --help' for more information.
+On Ubuntu 20.04 / 22.04 / 24.04:
 
+sudo apt-get update
+sudo apt-get install libncurses5
+
+
+If your distro does not have the package, you can install compatibility libraries:
+
+sudo apt-get install libncurses5-dev
+sudo apt-get install libtinfo5
+
+
+Many HPC clusters only need:
+
+sudo apt-get install libtinfo5
+
+🔧 If libncurses5 is not available (common on newer distros)
+
+Create a compatibility symlink:
+
+cd /usr/lib/x86_64-linux-gnu
+sudo ln -s libncurses.so.6 libncurses.so.5
+sudo ln -s libtinfo.so.6 libtinfo.so.5
+
+
+This works because libncurses APIs used by FreeSurfer don’t rely on the removed parts of ncurses6.
+
+🎯 Confirm the fix
+
+After installing:
+
+ldconfig -p | grep ncurses
+
+
+You should now see something like:
+
+libncurses.so.5 (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libncurses.so.5
+
+
+Then test FreeSurfer manually:
+
+segmentSubjectT1_autoEstimateAlveusML
+
+
+If it runs (prints help), you’re good.
