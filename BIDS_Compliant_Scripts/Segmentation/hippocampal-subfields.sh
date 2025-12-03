@@ -1,123 +1,89 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
-###############################################
-#  Check inputs
-###############################################
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 /path/to/freesurfer_7.2_directory/"
-    exit 1
+###############################################################
+# Parallel Freesurfer hippocampal subfield segmentation
+# Handles BIDS-style sub-NNNN/ses-YY folders
+# Uses FIFO semaphore for parallelization
+###############################################################
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 <freesurfer_base_dir> [MAX_JOBS]"
+  exit 1
 fi
 
-BASE="$1"
-OUTCSV="hippocampal_subfields_summary.csv"
+FS_BASE="$1"            # e.g. /Volumes/vdrive/.../freesurfer_7.2
+MAX_JOBS="${2:-4}"      # default max parallel jobs
 
-echo "Using base directory: $BASE"
-echo "Output CSV will be:  $OUTCSV"
-echo
+BATCH_LOG="$FS_BASE/hippo_batch_$(date +%Y%m%d_%H%M%S).log"
+echo "🔹 Batch log: $BATCH_LOG"
+echo "Starting batch at $(date)" | tee -a "$BATCH_LOG"
+echo "Max parallel jobs: $MAX_JOBS" | tee -a "$BATCH_LOG"
 
-###############################################
-#  Find subjects (GVFS-safe)
-###############################################
-subjects=()
-for d in "$BASE"/sub-*; do
-    [ -d "$d" ] && subjects+=("$(basename "$d")")
+# ----------------- Find all subject/session directories -----------------
+SESSION_DIRS=()
+for subj in "$FS_BASE"/sub-*; do
+    [[ -d "$subj" ]] || continue
+    for ses in "$subj"/ses-*; do
+        [[ -d "$ses" ]] || continue
+        SESSION_DIRS+=("$ses")
+    done
 done
 
-if [ "${#subjects[@]}" -eq 0 ]; then
-    echo "ERROR: No subjects found under: $BASE"
-    exit 1
-fi
+NUM_JOBS=${#SESSION_DIRS[@]}
+echo "🧩 Found $NUM_JOBS sessions to process" | tee -a "$BATCH_LOG"
+echo ">>> First 5 sessions:"
+printf '%s\n' "${SESSION_DIRS[@]}" | head -n5 | tee -a "$BATCH_LOG"
 
-echo "Found ${#subjects[@]} subject(s)."
-echo
+# ----------------- FIFO semaphore -----------------
+SEM_FIFO="/tmp/hippo_sem_$$"
+trap 'rm -f "$SEM_FIFO"' EXIT
+mkfifo "$SEM_FIFO"
+exec 3<>"$SEM_FIFO"
+for ((i=0;i<MAX_JOBS;i++)); do printf '%s\n' "token" >&3; done
 
-HEADER_BUILT=0
+acquire() { read -r -u 3 || return 1; }
+release() { printf '%s\n' "token" >&3; }
 
-###############################################
-#  Main loop
-###############################################
-for subj in "${subjects[@]}"; do
-    subjdir="${BASE}/${subj}"
+# ----------------- Main loop -----------------
+for ses_dir in "${SESSION_DIRS[@]}"; do
+    ses_name=$(basename "$ses_dir")               # e.g. ses-Y0
+    subj_id=$(basename "$(dirname "$ses_dir")")  # e.g. sub-1016
 
-    # enumerate sessions
-    sessions=()
-    for sespath in "$subjdir"/ses-*; do
-        [ -d "$sespath" ] && sessions+=("$(basename "$sespath")")
-    done
+    LOG_FILE="$ses_dir/${subj_id}_${ses_name}_hippo.log"
 
-    if [ "${#sessions[@]}" -eq 0 ]; then
-        echo "WARNING: no sessions found for $subj — skipping"
+    # skip if already done (check lh and rh stats)
+    if [[ -f "$ses_dir/stats/hipposubfields.lh.T1.v21.stats" ]] && \
+       [[ -f "$ses_dir/stats/hipposubfields.rh.T1.v21.stats" ]]; then
+        echo "✅ $subj_id $ses_name already segmented, skipping" | tee -a "$BATCH_LOG"
         continue
     fi
 
-    for ses in "${sessions[@]}"; do
-        sesdir="${subjdir}/${ses}"
-        statsdir="${sesdir}/stats"
+    acquire
 
-        lhstats="${statsdir}/hipposubfields.lh.T1.v21.stats"
-        rhstats="${statsdir}/hipposubfields.rh.T1.v21.stats"
+    {
+        echo "🚀 [$(date)] Starting hippocampal segmentation: $subj_id $ses_name" | tee -a "$BATCH_LOG"
 
-        echo "------------------------------------------------"
-        echo "SUBJECT: $subj  SESSION: $ses"
-        echo "------------------------------------------------"
+        # SUBJECTS_DIR points to the parent subject folder
+        export SUBJECTS_DIR="$FS_BASE/$subj_id"
 
-        ###############################################
-        #  Skip if already processed
-        ###############################################
-        if [ -f "$lhstats" ] && [ -f "$rhstats" ]; then
-            echo "✓ Already processed — skipping segmentHA"
-        else
-            echo "→ Running segmentHA_T1.sh ..."
-
-            # Freesurfer requirement: SUBJECT = session name, SUBJECTS_DIR = subject directory
-            export SUBJECTS_DIR="$subjdir"
-
-            if ! segmentHA_T1.sh "$ses" "$subjdir"; then
-                echo "ERROR: segmentHA_T1.sh failed for $subj $ses"
-                continue
-            fi
-
-            # recheck outputs
-            if [ ! -f "$lhstats" ] || [ ! -f "$rhstats" ]; then
-                echo "ERROR: segmentHA_T1.sh completed but expected stats files missing."
-                echo "Missing:"
-                [ ! -f "$lhstats" ] && echo "  - LH stats"
-                [ ! -f "$rhstats" ] && echo "  - RH stats"
-                continue
-            fi
-
-            echo "✓ segmentHA_T1.sh completed."
+        # Call segmentHA_T1.sh on the session folder
+        if ! segmentHA_T1.sh "$ses_name" >> "$LOG_FILE" 2>&1; then
+            echo "❌ segmentHA_T1.sh failed for $subj_id $ses_name; see $LOG_FILE" | tee -a "$BATCH_LOG"
+            echo "=== FAIL $subj_id $ses_name $(date) ===" >> "$LOG_FILE"
+            release
+            continue
         fi
 
-        ###############################################
-        #  Build CSV header once
-        ###############################################
-        if [ $HEADER_BUILT -eq 0 ]; then
-            labels=$(awk 'NF>=5 {print $5}' "$lhstats")
+        echo "✅ Completed hippocampal segmentation: $subj_id $ses_name" | tee -a "$BATCH_LOG"
+        echo "=== DONE $subj_id $ses_name $(date) ===" >> "$LOG_FILE"
 
-            header="SubjID,ses"
-            for lbl in $labels; do header="${header},${lbl}_lh"; done
-            for lbl in $labels; do header="${header},${lbl}_rh"; done
-
-            echo "$header" > "$OUTCSV"
-            HEADER_BUILT=1
-            echo "→ CSV header created."
-        fi
-
-        ###############################################
-        #  Extract values
-        ###############################################
-        lhvals=$(awk '{print $4}' "$lhstats" | paste -sd "," -)
-        rhvals=$(awk '{print $4}' "$rhstats" | paste -sd "," -)
-
-        echo "${subj},${ses},${lhvals},${rhvals}" >> "$OUTCSV"
-        echo "✓ Added to CSV."
-
-    done
+        release
+    } &
 done
 
-echo
-echo "==========================================="
-echo "DONE! CSV generated: $OUTCSV"
-echo "==========================================="
+wait
+exec 3>&-
+rm -f "$SEM_FIFO"
+
+echo "🎉 All hippocampal segmentation jobs completed at $(date)" | tee -a "$BATCH_LOG"
