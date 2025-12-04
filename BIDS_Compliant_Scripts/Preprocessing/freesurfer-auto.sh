@@ -8,12 +8,9 @@ set -uo pipefail
 # Description:
 #   - Scans BIDS-style directories for T1w.nii(.gz) images:
 #       sub-*/ses-*/anat/sub-*_ses-*_T1w.nii.gz
-#   - Runs recon-all (FreeSurfer 7.2) in parallel (max jobs = $MAX_JOBS)
+#   - Runs recon-all in parallel (max jobs = $MAX_JOBS)
 #   - Skips subjects/sessions that already finished successfully
 #
-# Notes:
-#   - Uses a FIFO semaphore for concurrency control
-#   - Keeps per-subject logs and tmp dirs (no cleanup)
 ############################################################
 
 if [[ $# -lt 2 ]]; then
@@ -34,9 +31,9 @@ echo "Starting batch at $(date)" > "$batch_log"
 echo "Scratch base: $scratch_base" | tee -a "$batch_log"
 echo "Max jobs: $MAX_JOBS" | tee -a "$batch_log"
 
-# ============================================================
+# ############################################################
 # Step 1. Find all T1w files in BIDS layout
-# ============================================================
+# ############################################################
 mapfile -t t1_files < <(find "$input_dir" -type f -iname "*_T1w.nii*" | sort)
 
 if [[ ${#t1_files[@]} -eq 0 ]]; then
@@ -44,9 +41,9 @@ if [[ ${#t1_files[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# ============================================================
+# ############################################################
 # Step 2. Extract subject/session info
-# ============================================================
+# ############################################################
 subjects=()
 sessions=()
 t1_selected=()
@@ -54,8 +51,7 @@ t1_selected=()
 declare -A seen
 
 for t1 in "${t1_files[@]}"; do
-  # Example path:
-  # /.../sub-1001/ses-Y0/anat/sub-1001_ses-Y0_T1w.nii.gz
+
   subj=$(basename "$(dirname "$(dirname "$t1")")")   # sub-1001
   ses=$(basename "$(dirname "$t1")")                 # ses-Y0
   subj_id="${subj}_${ses}"                           # unique pair (sub-1001_ses-Y0)
@@ -73,9 +69,9 @@ done
 
 echo "🧩 Identified ${#t1_selected[@]} subject/session pairs." | tee -a "$batch_log"
 
-# ============================================================
+# ############################################################
 # Step 3. Create FIFO semaphore for concurrency control
-# ============================================================
+# ############################################################
 sem_fifo="/tmp/freesurf_sem_$$"
 trap 'rm -f "$sem_fifo"' EXIT
 mkfifo "$sem_fifo"
@@ -85,9 +81,9 @@ for ((i=0;i<MAX_JOBS;i++)); do printf '%s\n' "token" >&3; done
 acquire() { read -r -u 3 || return 1; }
 release() { printf '%s\n' "token" >&3; }
 
-# ============================================================
+# ############################################################
 # Step 4. Main loop over subject/session
-# ============================================================
+# ############################################################
 for idx in "${!t1_selected[@]}"; do
   subj="${subjects[$idx]}"
   ses="${sessions[$idx]}"
@@ -116,28 +112,28 @@ for idx in "${!t1_selected[@]}"; do
     export SUBJECTS_DIR="$subj_tmp"
 
     echo "🏁 Running recon-all import for $subj_ses (log: $subj_log)" | tee -a "$batch_log"
-    echo "=== START ${subj_ses} $(date) ===" >> "$subj_log"
+    echo "##= START ${subj_ses} $(date) ##=" >> "$subj_log"
 
     if ! recon-all -i "$t1_file" -subjid "$subj_ses" >> "$subj_log" 2>&1; then
       echo "❌ recon-all -i failed for $subj_ses; see $subj_log" | tee -a "$batch_log"
-      echo "=== FAIL ${subj_ses} $(date) ===" >> "$subj_log"
+      echo "##= FAIL ${subj_ses} $(date) ##=" >> "$subj_log"
       release; continue
     fi
 
     echo "⚙️ Starting recon-all -all for $subj_ses" >> "$subj_log"
     if ! recon-all -all -subjid "$subj_ses" >> "$subj_log" 2>&1; then
       echo "❌ recon-all -all failed for $subj_ses; see $subj_log" | tee -a "$batch_log"
-      echo "=== FAIL ${subj_ses} $(date) ===" >> "$subj_log"
+      echo "##= FAIL ${subj_ses} $(date) ##=" >> "$subj_log"
       release; continue
     fi
 
     if tail -n 1 "$recon_log" 2>/dev/null | grep -q "finished without error"; then
       rsync -a "$subj_tmp/$subj_ses" "$output_dir/" --exclude="tmp"
       echo "✅ Finished $subj_ses and copied results." | tee -a "$batch_log"
-      echo "=== DONE ${subj_ses} $(date) ===" >> "$subj_log"
+      echo "##= DONE ${subj_ses} $(date) ##=" >> "$subj_log"
     else
       echo "❌ $subj_ses did not finish cleanly; check $recon_log" | tee -a "$batch_log"
-      echo "=== FAIL ${subj_ses} $(date) ===" >> "$subj_log"
+      echo "##= FAIL ${subj_ses} $(date) ##=" >> "$subj_log"
     fi
 
     release

@@ -38,9 +38,9 @@ declare -A headers_rh
 declare -A seen_keys
 sub_ses_list=()
 
-# -----------------------------
+# #############################
 # Parse all stats files
-# -----------------------------
+# #############################
 for f in "${stats_files[@]}"; do
     # Correctly extract subj and ses based on BIDS FS structure:
     # FS_BASE/sub-XXXX/ses-YY/stats/hipposubfields.*.stats
@@ -68,9 +68,9 @@ for f in "${stats_files[@]}"; do
     done < "$f"
 done
 
-# -----------------------------
+# #############################
 # Build CSV header
-# -----------------------------
+# #############################
 echo -n "Sub,Ses" > "$tmp_header"
 for h in $(printf "%s\n" "${!headers_lh[@]}" | sort); do
     echo -n ",${h}_lh" >> "$tmp_header"
@@ -80,9 +80,9 @@ for h in $(printf "%s\n" "${!headers_rh[@]}" | sort); do
 done
 echo "" >> "$tmp_header"
 
-# -----------------------------
+# #############################
 # Build CSV rows
-# -----------------------------
+# #############################
 for key in "${sub_ses_list[@]}"; do
     subj=$(echo "$key" | cut -d'_' -f1)
     ses=$(echo "$key" | cut -d'_' -f2)
@@ -101,9 +101,9 @@ for key in "${sub_ses_list[@]}"; do
     echo "" >> "$tmp_rows"
 done
 
-# -----------------------------
+# #############################
 # Combine header and rows
-# -----------------------------
+# #############################
 cat "$tmp_header" "$tmp_rows" > "$OUT_CSV"
 rm -f "$tmp_header" "$tmp_rows"
 
