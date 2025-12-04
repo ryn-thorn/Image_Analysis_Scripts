@@ -77,4 +77,4 @@ done
 
 # Wait for all background jobs to finish
 wait
-echo "All subjects processed."
+echo "✅All subjects processed."
