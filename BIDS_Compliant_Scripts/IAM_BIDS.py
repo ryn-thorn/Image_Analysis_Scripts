@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
 IAM_BIDS.py  — Clean regenerated script with:
-  • zip → extract → DICOM → dcm2niix → BIDS folder layout
-  • TSV logging (conversion + rename + unmatched)
+ zip → extract → DICOM → dcm2niix → BIDS folder layout
+ TSV logging (conversion + rename + unmatched)
 """
 import argparse
 import json
@@ -20,7 +20,7 @@ import pydicom
 from tqdm import tqdm
 
 # ---------------- PATHS ----------------
-INPUT_ZIP_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/00_zipped_archive")
+INPUT_ZIP_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/Zipped_Imaging_Files/00_mri_zipped")
 OUTPUT_BIDS_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS")
 LOG_PATH = OUTPUT_BIDS_DIR / "bids_conversion_log.tsv"
 
