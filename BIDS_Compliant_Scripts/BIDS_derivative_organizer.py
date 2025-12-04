@@ -27,7 +27,7 @@ import shutil
 from pathlib import Path
 from tqdm import tqdm
 
-# ---------------- CONFIG ----------------
+# ---------------- Setup ----------------
 SUFFIX_SESSION_MAP = {
     "": "ses-Y0",
     "b": "ses-Y2",
@@ -38,7 +38,7 @@ SUFFIX_SESSION_MAP = {
 LOG_FILENAME = "BIDS_derivative_copy.log"
 ERROR_LOG_FILENAME = "BIDS_derivative_copy_errors.log"
 
-# ---------------- HELPERS ----------------
+# ---------------- Functions ----------------
 def parse_subject_suffix(folder_name: str, prefix: str):
     """
     Given folder like IAM_1001b or IAM_1002, return (subject_number, suffix)
@@ -70,7 +70,6 @@ def copy_folder(src: Path, dst: Path, error_log: Path):
         logging.warning(f"Failed to copy {src} → {dst}: {e}")
         return False
 
-# ---------------- MAIN FUNCTION ----------------
 def convert_structure(input_dir: Path, output_dir: Path, prefix: str):
     logging.info("Starting BIDS derivative copy conversion...")
 
@@ -100,7 +99,6 @@ def convert_structure(input_dir: Path, output_dir: Path, prefix: str):
             if not copy_folder(var, out_session_dir, error_log):
                 failed_subjects.append(var.name)
 
-    # ---------------- SUMMARY ----------------
     logging.info("BIDS derivative copy complete.")
     if failed_subjects:
         logging.warning(f"{len(failed_subjects)} folders failed to copy. See {error_log} for details:")

@@ -18,7 +18,7 @@ from pathlib import Path
 from tqdm import tqdm
 import tempfile
 
-# ---------------- CONFIG ----------------
+# ---------------- File Names ----------------
 STRING_MAP = {
     "PET_Brain_(calculated_AC)": "PET_Brain-Calc_AC",
     "PET_Brain_AC": "PET_Brain-AC",
@@ -29,7 +29,7 @@ STRING_MAP = {
 LOG_FILENAME = "BIDS_pet_conversion.log"
 ERROR_LOG_FILENAME = "BIDS_pet_conversion_errors.log"
 
-# ---------------- HELPERS ----------------
+# ---------------- Functions ----------------
 def unzip_file(zip_path: Path, extract_to: Path):
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(extract_to)
@@ -67,7 +67,6 @@ def rename_and_move_files(subject: str, temp_dir: Path, bids_dir: Path):
         shutil.move(str(f), dst)
         logging.info(f"{f.name} → {dst}")
 
-# ---------------- MAIN ----------------
 def process_pet(input_dir: Path, bids_dir: Path):
     logging.info("Starting PET BIDS conversion...")
 

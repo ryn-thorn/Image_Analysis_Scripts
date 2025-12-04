@@ -2,9 +2,7 @@
 """
 IAM_BIDS.py  — Clean regenerated script with:
   • zip → extract → DICOM → dcm2niix → BIDS folder layout
-  • BIDS renaming rules integrated
-  • unified TSV logging (conversion + rename + unmatched)
-  • consistent formatting and indentation
+  • TSV logging (conversion + rename + unmatched)
 """
 import argparse
 import json
@@ -21,12 +19,12 @@ from pathlib import Path
 import pydicom
 from tqdm import tqdm
 
-# ---------------- CONFIG ----------------
+# ---------------- PATHS ----------------
 INPUT_ZIP_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/00_zipped_archive")
 OUTPUT_BIDS_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS")
 LOG_PATH = OUTPUT_BIDS_DIR / "bids_conversion_log.tsv"
 
-# Session map
+# Timepoint map
 SES_MAP = {
     "": "ses-Y0",
     "b": "ses-Y2",
@@ -47,12 +45,12 @@ CLASS_RULES = [
     (re.compile(r"vista|vista_ref", re.I), "vista"),
 ]
 
-# ID parsing regex to capture IAM_ or 1AM_ variants, allow hyphen or underscore, optional suffix letter.
+# Fix IAM_ or 1AM_ variant goofs
 ID_RE = re.compile(r"[I1]AM[_-]?0*([0-9]+)([A-Za-z]?)")
 
 # ----------- BIDS RENAMING MAP -----------
 # Each rule matches the original base (without extension) and returns the BIDS suffix.
-# The final filename will be: {subject}_{session}_{bids_suffix}{ext}
+# The final filename will be: {subject}_{session}_{bids_suffix}.{ext}
 BIDS_NAME_RULES = [
     (re.compile(r"^AAHead_Scout_32ch-head-coil(_.*)?$", re.I), "AAHead_Scout_32ch-head-coil"),
     (re.compile(r"^AAHead_Scout_32ch-head-coila(_.*)?$", re.I), "AAHead_Scout_32ch-head-coil"),
@@ -133,7 +131,7 @@ BIDS_NAME_RULES = [
 ]
 
 
-# ---------------- Helpers ----------------
+# ---------------- Functions ----------------
 def write_log_row(ts, zipname, raw_pid, normalized_subject, session, outpath, status, note=""):
     header = "timestamp\tzipfile\tpatient_id\tnormalized_subject\tsession\toutpath\tstatus\tnote\n"
     write_header = not LOG_PATH.exists()
@@ -167,13 +165,6 @@ def parse_patient_id(pid_raw):
     return None, None, None
 
 def find_dicom_root(extract_dir: Path):
-    """
-    Given the extracted zip root, try these in order:
-      1) a directory named 'dicom' (case-insensitive)
-      2) first directory containing many files (heuristic)
-      3) the extract_dir itself
-    Returns Path or None if empty.
-    """
     # 1) look for 'dicom' directory
     for p in extract_dir.rglob("*"):
         if p.is_dir() and p.name.lower() == "dicom":
@@ -194,7 +185,6 @@ def find_dicom_root(extract_dir: Path):
     return extract_dir
 
 def find_first_valid_dicom(dicom_dir: Path):
-    """Return the first file path inside dicom_dir that pydicom can read (force=True)."""
     for p in dicom_dir.rglob("*"):
         if p.is_file():
             try:
@@ -228,7 +218,7 @@ def run_dcm2niix(dicom_dir: Path, out_dir: Path, compress=True):
         "dcm2niix",
         "-z", zflag,
         "-o", str(out_dir),
-        "-f", "%p",  # protocol_series
+        "-f", "%p",  
         str(dicom_dir)
     ]
     try:
@@ -237,14 +227,7 @@ def run_dcm2niix(dicom_dir: Path, out_dir: Path, compress=True):
     except FileNotFoundError as e:
         return 127, str(e)
 
-# ---------------- BIDS rename helper ----------------
 def apply_bids_rename(fpath: Path, subject: str, session: str):
-    """
-    Given a file path (Path) that already exists on disk, try to rename it using
-    BIDS_NAME_RULES. Returns (renamed_bool, new_path_or_original_path, note).
-    - subject should already be like 'sub-1002'
-    - session should already be like 'ses-Y4'
-    """
     name = fpath.name
     # detect .nii.gz
     if name.lower().endswith('.nii.gz'):
@@ -279,7 +262,6 @@ def apply_bids_rename(fpath: Path, subject: str, session: str):
     # no rule matched
     return False, fpath, "NO_RENAME_RULE_MATCH"
 
-# ---------------- Main zip processing ----------------
 def process_zip(zip_path: Path, overwrite=False, dry_run=False):
     ts = datetime.utcnow().isoformat()
     zipname = zip_path.name
@@ -327,13 +309,13 @@ def process_zip(zip_path: Path, overwrite=False, dry_run=False):
         subj_folder = OUTPUT_BIDS_DIR / normalized_subj
         session_dir = subj_folder / session
 
-        # Create subject and canonical session folders (Y0/Y2/Y4/Y6) if needed
+        # Create subject and session folders (Y0/Y2/Y4/Y6) if needed
         for sf in ["ses-Y0", "ses-Y2", "ses-Y4", "ses-Y6"]:
             for ssub in SESSION_SUBFOLDERS:
                 (subj_folder / sf / ssub).mkdir(parents=True, exist_ok=True)
 
         # If session folder already has files and not overwrite -> skip
-        # Only consider real data files, not empty folder scaffolding
+        # Only consider real data files, not empty folder
         DATA_EXTS = {".nii", ".gz", ".json", ".bval", ".bvec", ".tsv"}
 
         target_session_has_files = any(
@@ -352,7 +334,7 @@ def process_zip(zip_path: Path, overwrite=False, dry_run=False):
             write_log_row(ts, zipname, raw_pid, normalized_subj, session, str(session_dir), status, "dry-run; not converting")
             return
 
-        # If overwrite requested, remove existing contents of that session folder (be careful)
+        # If overwrite requested, remove existing contents of that session folder (probs don't do this)
         if overwrite and target_session_has_files:
             shutil.rmtree(session_dir)
             # recreate expected structure
@@ -375,7 +357,6 @@ def process_zip(zip_path: Path, overwrite=False, dry_run=False):
             return
 
         # 5) For each output (prefer JSON sidecar to classify; if no JSON use filename)
-        # Build mapping basekey -> list of files
         files_by_base = {}
         for p in produced:
             basekey = re.sub(r"\.nii(\.gz)?$|\.json$|\.bval$|\.bvec$", "", p.name, flags=re.I)
@@ -444,7 +425,7 @@ def process_zip(zip_path: Path, overwrite=False, dry_run=False):
         except Exception:
             pass
 
-# ---------------- CLI & Runner ----------------
+# ---------------- Runner ----------------
 def main():
     parser = argparse.ArgumentParser(description="Organize IAM zipped dicoms into BIDS-like layout with renaming")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing session data (dangerous).")

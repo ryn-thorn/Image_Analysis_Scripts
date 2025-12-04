@@ -22,9 +22,7 @@ import sys
 import csv
 from datetime import datetime
 
-# ---------------------------------------------------------------------------
-# BIDS filename pattern
-# ---------------------------------------------------------------------------
+# ----------------------- BIDS filename pattern ---------------------------------
 BIDS_RE = re.compile(r"sub-(?P<sub>[^_]+)_ses-(?P<ses>[^_]+)_(?P<suffix>.+)\.(nii\.gz|json|bval|bvec)$")
 
 EXPECTED_MODALITIES = {
@@ -35,9 +33,7 @@ EXPECTED_MODALITIES = {
     "misc": []
 }
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# ----------------------- Functions ---------------------------------
 def is_bids_file(filename):
     return BIDS_RE.match(filename) is not None
 
@@ -48,9 +44,6 @@ def detect_modality(filename):
                 return modality
     return "unknown"
 
-# ---------------------------------------------------------------------------
-# Main validation logic
-# ---------------------------------------------------------------------------
 def validate_bids(bids_root):
     report_path = os.path.join(bids_root, "IAM_BIDS_validation_report.tsv")
 
@@ -96,9 +89,7 @@ def validate_bids(bids_root):
 
     print(f"Validation complete. TSV report written to: {report_path}")
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+# ----------------------- Usage ---------------------------------
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python IAM_BIDS_validator.py /path/to/IAM_BIDS")
