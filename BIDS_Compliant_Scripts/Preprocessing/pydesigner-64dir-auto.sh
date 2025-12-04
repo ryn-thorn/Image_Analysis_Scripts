@@ -15,7 +15,7 @@
 #
 #######################################
 #
-# Usage: /path/to/pyd_preproc.sh --base /path/to/BIDS_folder
+# Usage: /path/to/pyd_preproc.sh --base /path/to/BIDS_folder --out /path/to/pydesigner
 #
 #######################################
 
@@ -35,6 +35,7 @@ error_exit() {
 # Arguments
 #####################################
 BASE=""
+OUT=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --base)
@@ -61,9 +62,9 @@ fi
 #####################################
 # Setup output + logging
 #####################################
-OUTROOT="$BASE/derivatives/pydesigner"
-mkdir -p "$OUTROOT"
-ERRORLOG="$OUTROOT/error.log"
+OUT="$BASE/derivatives/pydesigner/dki_pydesigner"
+mkdir -p "$OUT"
+ERRORLOG="$OUT/error.log"
 touch "$ERRORLOG"
 
 #####################################
@@ -78,7 +79,7 @@ for subj_path in "$BASE"/sub-*; do
         continue
     fi
 
-    subj_out="$OUTROOT/$subj"
+    subj_out="$OUT/$subj"
 
     # Skip if already processed
     if [[ -d "$subj_out" ]]; then
@@ -90,16 +91,16 @@ for subj_path in "$BASE"/sub-*; do
     mkdir -p "$subj_out"
     echo "Output directory for $subj: $subj_out"
 
-    dmri_dir="$subj_path/dmri"
-    if [[ ! -d "$dmri_dir" ]]; then
-        error_exit "Missing dmri directory for $subj"
+    dwi_dir="$subj_path/dwi"
+    if [[ ! -d "$dwi_dir" ]]; then
+        error_exit "Missing dwi directory for $subj"
         continue
     fi
 
     # Find files
     shopt -s nullglob nocaseglob
-    dki_main=("$dmri_dir"/DKI*.nii)
-    dki_topup=("$dmri_dir"/DKI*TOPUP*.nii "$dmri_dir"/DKI*TOP_UP*.nii)
+    dki_main=("$dwi_dir"/DKI*.nii)
+    dki_topup=("$dwi_dir"/DKI*TOPUP*.nii "$dwi_dir"/DKI*TOP_UP*.nii)
     shopt -u nullglob nocaseglob
 
     if [[ ${#dki_main[@]} -eq 0 ]]; then

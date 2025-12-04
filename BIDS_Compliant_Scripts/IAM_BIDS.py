@@ -20,7 +20,7 @@ import pydicom
 from tqdm import tqdm
 
 # ---------------- PATHS ----------------
-INPUT_ZIP_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/Zipped_Imaging_Files/00_mri_zipped")
+INPUT_ZIP_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/to_unzip")
 OUTPUT_BIDS_DIR = Path("/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS")
 LOG_PATH = OUTPUT_BIDS_DIR / "bids_conversion_log.tsv"
 
