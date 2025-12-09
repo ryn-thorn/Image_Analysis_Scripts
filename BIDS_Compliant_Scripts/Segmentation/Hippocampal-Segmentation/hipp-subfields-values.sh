@@ -6,10 +6,9 @@ set -eo pipefail
 #   ./hippo_stats_to_csv.sh <freesurfer_base_dir> <output_csv>
 #
 # Description:
-#   - Finds all hipposubfields.*.stats files under BIDS FreeSurfer outputs
-#   - Extracts volume (4th column) for each subfield
-#   - Combines left (lh) and right (rh) into a single CSV
-#   - Output columns: Sub,Ses,Hippocampal_tail_lh,...,Whole_hippocampus_rh
+#   - Finds all hipposubfields.*.stats files and extracts volumes
+#   - Extracts eTIV from aseg.stats 
+#   - Output columns: Sub,Ses,eTIV,Hippocampal_tail_lh,...,Whole_hippocampus_rh
 ############################################################
 
 if [[ $# -lt 2 ]]; then
@@ -54,6 +53,17 @@ for f in "${stats_files[@]}"; do
         sub_ses_list+=("$key")
     fi
 
+    ###############################################
+    # NEW: Extract eTIV from aseg.stats file
+    ###############################################
+    aseg_file="$(dirname "$f")/aseg.stats"
+    if [[ -f "$aseg_file" ]]; then
+        etiv=$(grep -m1 "EstimatedTotalIntraCranialVol" "$aseg_file" | awk -F',' '{print $4}' | tr -d ' ')
+        data["${key}_eTIV"]="$etiv"
+    else
+        data["${key}_eTIV"]="NA"
+    fi
+
     while read -r line; do
         [[ "$line" =~ ^# ]] && continue  # skip comments
         vol=$(echo "$line" | awk '{print $4}')
@@ -71,6 +81,10 @@ done
 # Build CSV header
 ##############################
 echo -n "Sub,Ses" > "$tmp_header"
+
+# NEW: Add eTIV as column C
+echo -n ",eTIV" >> "$tmp_header"
+
 for h in $(printf "%s\n" "${!headers_lh[@]}" | sort); do
     echo -n ",${h}_lh" >> "$tmp_header"
 done
@@ -86,6 +100,10 @@ for key in "${sub_ses_list[@]}"; do
     subj=$(echo "$key" | cut -d'_' -f1)
     ses=$(echo "$key" | cut -d'_' -f2)
     echo -n "$subj,$ses" >> "$tmp_rows"
+
+    # NEW: Insert eTIV immediately after Sub,Ses
+    etiv="${data[${key}_eTIV]:-NA}"
+    echo -n ",$etiv" >> "$tmp_rows"
 
     # Left hemisphere volumes
     for h in $(printf "%s\n" "${!headers_lh[@]}" | sort); do
