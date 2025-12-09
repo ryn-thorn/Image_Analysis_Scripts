@@ -8,7 +8,7 @@ set -euo pipefail
 print_usage() {
   echo ""
   echo "Usage:"
-  echo "  $0 --pet-fbp <FBP> --pet-fbb <FBB> --roi-cortical <ROI_CTX> --roi-wholecbl <ROI_WC> --outdir <OUTDIR>"
+  echo "  $0 --fbp <FBP> --fbb <FBB> [--outdir <OUTDIR>]"
   echo "Optional: --mni <MNI_TEMPLATE>"
   exit 1
 }
@@ -18,13 +18,12 @@ print_usage() {
 # ------------------------------
 DEFAULT_MNI="${FSLDIR}/data/standard/MNI152_T1_1mm.nii.gz"
 MNI_TEMPLATE=""
+OUTDIR=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --pet-fbp) PET_FBP="$2"; shift 2;;
-    --pet-fbb) PET_FBB="$2"; shift 2;;
-    --roi-cortical) ROI_CTX="$2"; shift 2;;
-    --roi-wholecbl) ROI_WC="$2"; shift 2;;
+    --fbp) FBP="$2"; shift 2;;
+    --fbb) FBB="$2"; shift 2;;
     --outdir) OUTDIR="$2"; shift 2;;
     --mni) MNI_TEMPLATE="$2"; shift 2;;
     --help|-h) print_usage;;
@@ -32,9 +31,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Check required args
-if [[ -z "${PET_FBP:-}" || -z "${PET_FBB:-}" || -z "${ROI_CTX:-}" || -z "${ROI_WC:-}" || -z "${OUTDIR:-}" ]]; then
+# Required args check
+if [[ -z "${FBP:-}" || -z "${FBB:-}" ]]; then
   echo "Missing required inputs."; print_usage
+fi
+
+# If OUTDIR not provided, set it to the directory containing the FBP input
+if [[ -z "${OUTDIR}" ]]; then
+  OUTDIR="$(dirname "${FBP}")"
 fi
 
 # MNI template fallback
@@ -47,7 +51,9 @@ if [[ -z "${MNI_TEMPLATE}" ]]; then
   fi
 fi
 
-mkdir -p "${OUTDIR}"/{linear_to_MNI,fnirt_to_avg,rois_to_MNI}
+# Prepare output dirs
+mkdir -p "${OUTDIR}/linear_to_MNI"
+mkdir -p "${OUTDIR}/fnirt_to_avg"
 
 echo ""
 echo "Using MNI template: ${MNI_TEMPLATE}"
@@ -63,9 +69,9 @@ fbb_mat="${OUTDIR}/linear_to_MNI/fbb_to_MNI.mat"
 
 echo "1) Linear registration (FLIRT)..."
 
-flirt -in "${PET_FBP}" -ref "${MNI_TEMPLATE}" -out "${fbp_lin}" 
+flirt -in "${FBP}" -ref "${MNI_TEMPLATE}" -out "${fbp_lin}"
 
-flirt -in "${PET_FBB}" -ref "${MNI_TEMPLATE}" -out "${fbb_lin}" 
+flirt -in "${FBB}" -ref "${MNI_TEMPLATE}" -out "${fbb_lin}"
 
 echo "   Done."
 
@@ -79,29 +85,22 @@ fslmaths "${fbp_lin}" -add "${fbb_lin}" -div 2 "${avg_pet}"
 echo "   Created: ${avg_pet}"
 
 # ------------------------------
-# 3) Nonlinear FNIRT registration ORIGINAL PET → avg_pet
-#     FNIRT requires both images in MNI space, so:
-#     - first affine-align the original PET to MNI
-#     - then run FNIRT using avg_pet as target
+# 3) Nonlinear FNIRT (orig PET → avg_pet)
 # ------------------------------
 
 echo "3) Nonlinear FNIRT (orig PET → avg_pet)..."
 
-# First: affine-align original PET → MNI (needed as FNIRT init)
+# First: affine-align original PET → MNI
 fbp_aff="${OUTDIR}/fnirt_to_avg/fbp_aff_to_MNI.nii.gz"
 fbb_aff="${OUTDIR}/fnirt_to_avg/fbb_aff_to_MNI.nii.gz"
 fbp_aff_mat="${OUTDIR}/fnirt_to_avg/fbp_aff_to_MNI.mat"
 fbb_aff_mat="${OUTDIR}/fnirt_to_avg/fbb_aff_to_MNI.mat"
 
-flirt -in "${PET_FBP}" -ref "${MNI_TEMPLATE}" -out "${fbp_aff}" \
-      -omat "${fbp_aff_mat}"
+flirt -in "${FBP}" -ref "${MNI_TEMPLATE}" -out "${fbp_aff}"
 
-flirt -in "${PET_FBB}" -ref "${MNI_TEMPLATE}" -out "${fbb_aff}" \
-      -omat "${fbb_aff_mat}"
+flirt -in "${FBB}" -ref "${MNI_TEMPLATE}" -out "${fbb_aff}"
 
-# Now FNIRT using avg_pet as the target
-# NOTE: FNIRT config designed for T1→MNI may not be ideal for PET→PET.
-# The "T1_2_MNI152_2mm.cnf" config works reasonably in practice but can be tuned.
+# FNIRT
 FNIRT_CFG="${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf"
 
 fbp_fnirt_warp="${OUTDIR}/fnirt_to_avg/fbp_warpcoef.nii.gz"
@@ -111,32 +110,17 @@ fbb_fnirt_warp="${OUTDIR}/fnirt_to_avg/fbb_warpcoef.nii.gz"
 fbb_fnirt="${OUTDIR}/fnirt_to_avg/fbb_to_avg_nonlin.nii.gz"
 
 echo "   FNIRT FBP..."
-fnirt --in="${PET_FBP}" --aff="${fbp_aff_mat}" --ref="${avg_pet}" \
-      --iout="${fbp_fnirt}" --cout="${fbp_fnirt_warp}" --config="${FNIRT_CFG}"
+fnirt --in="${FBP}" --aff="${fbp_aff_mat}" --ref="${avg_pet}" \
+      --iout="${fbp_fnirt}" --cout="${fbp_fnirt_warp}"
 
 echo "   FNIRT FBB..."
-fnirt --in="${PET_FBB}" --aff="${fbb_aff_mat}" --ref="${avg_pet}" \
-      --iout="${fbb_fnirt}" --cout="${fbb_fnirt_warp}" --config="${FNIRT_CFG}"
+fnirt --in="${FBB}" --aff="${fbb_aff_mat}" --ref="${avg_pet}" \
+      --iout="${fbb_fnirt}" --cout="${fbb_fnirt_warp}"
 
 echo "   Nonlinear warped images:"
 echo "     ${fbp_fnirt}"
 echo "     ${fbb_fnirt}"
 
-# ------------------------------
-# 4) Register ROIs to MNI
-# ------------------------------
-echo "4) ROI registration to MNI..."
-
-roi_ctx_out="${OUTDIR}/rois_to_MNI/roi_ctx_to_MNI.nii.gz"
-roi_wc_out="${OUTDIR}/rois_to_MNI/roi_WhlCbl_to_MNI.nii.gz"
-
-flirt -in "${ROI_CTX}" -ref "${MNI_TEMPLATE}" -out "${roi_ctx_out}" 
-
-flirt -in "${ROI_WC}" -ref "${MNI_TEMPLATE}" -out "${roi_wc_out}" 
-
-echo "   ROI outputs:"
-echo "     ${roi_ctx_out}"
-echo "     ${roi_wc_out}"
-
 echo ""
-echo "Done. All results in: ${OUTDIR}"
+echo "DONE."
+echo "Output directory: ${OUTDIR}"
