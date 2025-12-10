@@ -1,214 +1,124 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-#
-# Usage:
-#   ./centiloid_groupwide_FSL.sh --fpb /path/to/FBP --fbb /path/to/FBB [--mni /path/to/MNI152_T1_1mm.nii.gz]
+# ==========================
+# Script for PET registration and ROI extraction
+# bash pet_registration.sh --fbb /data/FBB --fbp /data/FBP --outcsv /data/roi_results.csv
 
-
-print_usage() {
-  cat <<EOF
-Usage:
-  $0 --fpb <FBP_DIR> --fbb <FBB_DIR> [--mni <MNI_TEMPLATE>]
-
-  --fpb   Directory containing subject subfolders for the "FBP" dataset.
-  --fbb   Directory containing subject subfolders for the "FBB" dataset.
-  --mni   Optional: path to MNI152_T1_1mm.nii.gz (defaults to \$FSLDIR/data/standard/MNI152_T1_1mm.nii.gz).
-EOF
-  exit 1
-}
-
-# -----------------------
-# Parse args
-# -----------------------
-FBP_DIR=""
-FBB_DIR=""
-MNI_TEMPLATE=""
+# ==========================
 
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --fpb) FBP_DIR="$2"; shift 2;;
-    --fbb) FBB_DIR="$2"; shift 2;;
-    --mni) MNI_TEMPLATE="$2"; shift 2;;
-    --help|-h) print_usage;;
-    *) echo "Unknown arg: $1"; print_usage;;
-  esac
+    case $1 in
+        --fbb)
+            FBB_DIR="$2"
+            shift 2
+            ;;
+        --fbp)
+            FBP_DIR="$2"
+            shift 2
+            ;;
+        --outcsv)
+            CSV_FILE="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option $1"
+            exit 1
+            ;;
+    esac
 done
 
-if [[ -z "${FBP_DIR}" || -z "${FBB_DIR}" ]]; then
-  echo "Missing required arguments."
-  print_usage
-fi
+# Default CSV if not provided
+CSV_FILE=${CSV_FILE:-"roi_means.csv"}
+echo "subjID,file,ctx,WhlCbl" > "$CSV_FILE"
 
-# Default MNI if not supplied
-DEFAULT_MNI="${FSLDIR:-}/data/standard/MNI152_T1_1mm.nii.gz"
-if [[ -z "${MNI_TEMPLATE}" ]]; then
-  if [[ -f "${DEFAULT_MNI}" ]]; then
-    MNI_TEMPLATE="${DEFAULT_MNI}"
-  else
-    echo "MNI template not found. Please supply --mni /path/to/MNI152_T1_1mm.nii.gz"
-    exit 1
-  fi
-fi
 
-echo "FBP_DIR: ${FBP_DIR}"
-echo "FBB_DIR: ${FBB_DIR}"
-echo "MNI template: ${MNI_TEMPLATE}"
-echo ""
+# --- FSL template ---
+MNI_TEMPLATE="/usr/local/fsl/data/standard/MNI152_T1_1mm.nii.gz"
 
-# Filenames to look for in each modality folder
-FBP_FILES=( "PiB.nii.gz" "florbetapir.nii.gz" )
-FBB_FILES=( "PET_PIB.nii.gz" "PET_FBB.nii.gz" )
+# --- ROIs ---
+ROI_CTX="voi_ctx_1mm.nii"
+ROI_CBL="voi_WhlCbl_1mm.nii"
 
-# Collect list of subject names present in both dirs
-declare -a SUBJECTS=()
-for subpath in "${FBP_DIR}"/*; do
-  [[ -d "${subpath}" ]] || continue
-  subj=$(basename "${subpath}")
-  if [[ -d "${FBB_DIR}/${subj}" ]]; then
-    SUBJECTS+=( "${subj}" )
-  else
-    echo "Warning: subject '${subj}' exists in FBP_DIR but not in FBB_DIR — skipping."
-  fi
-done
+# --- Output CSV ---
+CSV_FILE="roi_means.csv"
+echo "subjID,file,ctx,WhlCbl" > $CSV_FILE
 
-if [[ ${#SUBJECTS[@]} -eq 0 ]]; then
-  echo "No matching subject subfolders found between FBP_DIR and FBB_DIR. Exiting."
-  exit 1
-fi
+# --- Function to process a folder ---
+process_folder() {
+    local INPUT_DIR=$1
+    shift
+    local FILE_PATTERNS=("$@")  # list of filenames to look for
 
-echo "Found ${#SUBJECTS[@]} matching subjects to process."
-echo ""
+    echo "Processing $INPUT_DIR ..."
 
-# -----------------------
-# 1) Linear registration for all PET files found (to MNI)
-# -----------------------
-linear_list=()   # collect linear-registered file paths for averaging
+    # Temporary folder for intermediate files
+    TMP_DIR="${INPUT_DIR}/tmp_MNI"
+    mkdir -p $TMP_DIR
 
-for subj in "${SUBJECTS[@]}"; do
-  echo "Processing subject: ${subj}"
-  subj_fbp_dir="${FBP_DIR}/${subj}"
-  subj_fbb_dir="${FBB_DIR}/${subj}"
+    # Step 1: Linear registration to MNI and merge
+    LINEAR_MERGE_LIST=()
+    for subj in "$INPUT_DIR"/*; do
+        if [[ -d "$subj" ]]; then
+            subjID=$(basename "$subj")
+            for fname in "${FILE_PATTERNS[@]}"; do
+                infile="$subj/$fname"
+                if [[ -f "$infile" ]]; then
+                    outlin="${TMP_DIR}/${subjID}_${fname%.nii.gz}_lin2MNI.nii.gz"
+                    echo "Flirt linear registration: $infile -> $outlin"
+                    flirt -in "$infile" -ref "$MNI_TEMPLATE" -out "$outlin" -omat "${outlin%.nii.gz}.mat"
+                    LINEAR_MERGE_LIST+=("$outlin")
+                fi
+            done
+        fi
+    done
 
-  # FBP files
-  for fname in "${FBP_FILES[@]}"; do
-    infile="${subj_fbp_dir}/${fname}"
-    if [[ -f "${infile}" ]]; then
-      outbase="${subj_fbp_dir}/${fname%.*}"   # output in same folder as input
-      outimg="${outbase}_MNI.nii.gz"
-      outmat="${outbase}_to_MNI.mat"
-      echo "  FLIRT (FBP) ${infile} -> ${outimg}"
-      flirt -in "${infile}" -ref "${MNI_TEMPLATE}" -out "${outimg}" -omat "${outmat}" 
-      linear_list+=( "${outimg}" )
-    else
-      echo "  Missing (FBP) expected file: ${infile} -- skipping"
-    fi
-  done
+    # Merge and compute average
+    MERGED="${TMP_DIR}/merged_lin.nii.gz"
+    fslmerge -t "$MERGED" "${LINEAR_MERGE_LIST[@]}"
+    AVG="${TMP_DIR}/avg_lin.nii.gz"
+    fslmaths "$MERGED" -Tmean "$AVG"
+    echo "Average PET computed: $AVG"
 
-  # FBB files
-  for fname in "${FBB_FILES[@]}"; do
-    infile="${subj_fbb_dir}/${fname}"
-    if [[ -f "${infile}" ]]; then
-      outbase="${subj_fbb_dir}/${fname%.*}"   # output in same folder as input
-      outimg="${outbase}_MNI.nii.gz"
-      outmat="${outbase}_to_MNI.mat"
-      echo "  FLIRT (FBB) ${infile} -> ${outimg}"
-      flirt -in "${infile}" -ref "${MNI_TEMPLATE}" -out "${outimg}" -omat "${outmat}" 
-      linear_list+=( "${outimg}" )
-    else
-      echo "  Missing (FBB) expected file: ${infile} -- skipping"
-    fi
-  done
+    # Step 2: Affine + nonlinear registration to average map
+    for subj in "$INPUT_DIR"/*; do
+        if [[ -d "$subj" ]]; then
+            subjID=$(basename "$subj")
+            for fname in "${FILE_PATTERNS[@]}"; do
+                infile="$subj/$fname"
+                if [[ -f "$infile" ]]; then
+                    # Linear registration to average
+                    outlin="${TMP_DIR}/${subjID}_${fname%.nii.gz}_lin2AVG.nii.gz"
+                    flirt -in "$infile" -ref "$AVG" -out "$outlin" -omat "${outlin%.nii.gz}.mat"
 
-  echo ""
-done
+                    # Nonlinear registration using previous affine
+                    outnonlin="${subj}/${fname%.nii.gz}_MNI.nii.gz"
+                    fnirt --in="$infile" --aff="${outlin%.nii.gz}.mat" --ref="$AVG" --iout="$outnonlin"
+                fi
+            done
+        fi
+    done
 
-# Check we have something to average
-if [[ ${#linear_list[@]} -eq 0 ]]; then
-  echo "No linear-registered PETs were produced. Aborting."
-  exit 1
-fi
+    # Step 3: Extract ROI mean values
+    for subj in "$INPUT_DIR"/*; do
+        if [[ -d "$subj" ]]; then
+            subjID=$(basename "$subj")
+            for fname in "${FILE_PATTERNS[@]}"; do
+                regfile="${subj}/${fname%.nii.gz}_MNI.nii.gz"
+                if [[ -f "$regfile" ]]; then
+                    mean_ctx=$(fslmeants -i "$regfile" -m "$ROI_CTX")
+                    mean_cbl=$(fslmeants -i "$regfile" -m "$ROI_CBL")
+                    echo "${subjID},${fname%.nii.gz}_MNI.nii.gz,${mean_ctx},${mean_cbl}" >> $CSV_FILE
+                fi
+            done
+        fi
+    done
 
-echo "Linear-registered images collected: ${#linear_list[@]}"
+    # Clean up
+    rm -rf "$TMP_DIR"
+}
 
-# -----------------------
-# 2) Group-wide average of linear-registered images -> avg_pet.nii.gz
-# -----------------------
-# Use the FBP_DIR as output folder for avg_pet
-avg_pet="${FBP_DIR}/avg_pet.nii.gz"
-echo "Creating group average PET -> ${avg_pet}"
+# --- Process both folders ---
+process_folder "$FBB_DIR" "PET_FBB.nii.gz" "PET_PiB.nii.gz"
+process_folder "$FBP_DIR" "florbetapir.nii.gz" "PiB.nii.gz"
 
-first="${linear_list[0]}"
-cp "${first}" "${FBP_DIR}/_tmp_sum.nii.gz"
-
-if [[ ${#linear_list[@]} -gt 1 ]]; then
-  for ((i=1; i<${#linear_list[@]}; i++)); do
-    fslmaths "${FBP_DIR}/_tmp_sum.nii.gz" -add "${linear_list[i]}" "${FBP_DIR}/_tmp_sum.nii.gz"
-  done
-fi
-
-N=${#linear_list[@]}
-fslmaths "${FBP_DIR}/_tmp_sum.nii.gz" -div "${N}" "${avg_pet}"
-rm -f "${FBP_DIR}/_tmp_sum.nii.gz"
-
-echo "  Created: ${avg_pet}"
-echo ""
-
-# -----------------------
-# 3) FNIRT: for each original PET, affine init and warp -> avg_pet
-# -----------------------
-FNIRT_CFG="${FSLDIR}/etc/flirtsch/T1_2_MNI152_2mm.cnf"
-if [[ ! -f "${FNIRT_CFG}" ]]; then
-  echo "Warning: FNIRT config ${FNIRT_CFG} not found; fnirt may still run with defaults."
-fi
-
-for subj in "${SUBJECTS[@]}"; do
-  echo "FNIRT registering subject: ${subj}"
-  subj_fbp_dir="${FBP_DIR}/${subj}"
-  subj_fbb_dir="${FBB_DIR}/${subj}"
-
-  # FBP originals
-  for fname in "${FBP_FILES[@]}"; do
-    orig="${subj_fbp_dir}/${fname}"
-    if [[ -f "${orig}" ]]; then
-      outpref="${subj_fbp_dir}/${fname%.*}"
-      aff_out="${outpref}_aff.nii.gz"
-      aff_mat="${outpref}_aff.mat"
-      fnirt_iout="${outpref}_to_avg_nonlin.nii.gz"
-      fnirt_warp="${outpref}_warpcoef.nii.gz"
-
-      echo "  Affine (FLIRT) init: ${orig} -> MNI"
-      flirt -in "${orig}" -ref "${MNI_TEMPLATE}" -out "${aff_out}" -omat "${aff_mat}" -dof 12 -cost corratio -interp trilinear
-
-      echo "  FNIRT: ${orig} -> ${avg_pet}  (output: ${fnirt_iout})"
-      fnirt --in="${orig}" --aff="${aff_mat}" --ref="${avg_pet}" --iout="${fnirt_iout}" --cout="${fnirt_warp}" 
-    else
-      echo "  Missing original (FBP): ${orig} -- skipping"
-    fi
-  done
-
-  # FBB originals
-  for fname in "${FBB_FILES[@]}"; do
-    orig="${subj_fbb_dir}/${fname}"
-    if [[ -f "${orig}" ]]; then
-      outpref="${subj_fbb_dir}/${fname%.*}"
-      aff_out="${outpref}_aff.nii.gz"
-      aff_mat="${outpref}_aff.mat"
-      fnirt_iout="${outpref}_to_avg_nonlin.nii.gz"
-      fnirt_warp="${outpref}_warpcoef.nii.gz"
-
-      echo "  Affine (FLIRT) init: ${orig} -> MNI"
-      flirt -in "${orig}" -ref "${MNI_TEMPLATE}" -out "${aff_out}" -omat "${aff_mat}" -dof 12 -cost corratio -interp trilinear
-
-      echo "  FNIRT: ${orig} -> ${avg_pet}  (output: ${fnirt_iout})"
-      fnirt --in="${orig}" --aff="${aff_mat}" --ref="${avg_pet}" --iout="${fnirt_iout}" --cout="${fnirt_warp}" 
-    else
-      echo "  Missing original (FBB): ${orig} -- skipping"
-    fi
-  done
-
-  echo ""
-done
-
-echo "All done."
-echo "Group average PET: ${avg_pet}"
+echo "Processing complete. ROI means saved to $CSV_FILE"
