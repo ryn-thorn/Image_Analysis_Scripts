@@ -73,25 +73,31 @@ def check_fs_output(subj_fs_dir):
 
 
 def main(raw_base, fs_base, output_csv):
-    visits = ["Y0", "Y2", "Y4", "Y6"]
     rows = []
 
-    for visit in visits:
-        visit_dir = os.path.join(raw_base, visit)
-        if not os.path.isdir(visit_dir):
+    # Loop over subjects: sub-*
+    for subj in sorted(os.listdir(raw_base)):
+        subj_root = os.path.join(raw_base, subj)
+        if not os.path.isdir(subj_root):
             continue
 
-        for subj in sorted(os.listdir(visit_dir)):
-            subj_path = os.path.join(visit_dir, subj)
-            anat_dir = os.path.join(subj_path, "anat")
+        # Loop over visit folders inside subject: Y0 / Y2 / Y4 / Y6 etc.
+        for visit in sorted(os.listdir(subj_root)):
+            visit_dir = os.path.join(subj_root, visit)
+            if not os.path.isdir(visit_dir):
+                continue
 
+            anat_dir = os.path.join(visit_dir, "anat")
             if not os.path.isdir(anat_dir):
                 continue
 
+            # Check T1 in anat
             raw_t1 = has_t1(anat_dir)
-            subj_fs_dir = os.path.join(fs_base, subj)
-            fs_present = os.path.isdir(subj_fs_dir)
 
+            # Freesurfer folder now depends on *both* subject and visit
+            subj_fs_dir = os.path.join(fs_base, subj, visit)
+
+            fs_present = os.path.isdir(subj_fs_dir)
             fs_info = check_fs_output(subj_fs_dir) if fs_present else {
                 "aparc+aseg_present": False,
                 "aseg_present": False,
@@ -108,7 +114,7 @@ def main(raw_base, fs_base, output_csv):
                 **fs_info
             })
 
-    # Write output CSV
+    # Write CSV
     with open(output_csv, "w", newline="") as csvfile:
         fieldnames = [
             "SubjID",
@@ -125,13 +131,14 @@ def main(raw_base, fs_base, output_csv):
         writer.writeheader()
         writer.writerows(rows)
 
-    # Print summary
+    # Summary
     total = len(rows)
     complete = sum(1 for r in rows if r["FS_folder_found"] and r["aseg_present"] and r["aparc+aseg_present"])
     print(f"Summary written to {output_csv}")
-    print(f"Total subjects checked: {total}")
-    print(f"Subjects with complete Freesurfer outputs: {complete}")
+    print(f"Total subject-visits checked: {total}")
+    print(f"Complete Freesurfer outputs: {complete}")
     print(f"Incomplete or missing: {total - complete}")
+
 
 
 if __name__ == "__main__":
