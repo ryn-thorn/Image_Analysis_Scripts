@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/local/bin/bash
 set -euo pipefail
 #set -x
 
@@ -107,10 +107,17 @@ find_nii() {
 echo "Looking in $FS_BASE"
 
 if [[ -n "$SUBJECT" ]]; then
-    subj_dirs=("$FS_BASE/$SUBJECT")
+    mapfile -t subj_dirs < <(
+        find "$FS_BASE" -type d \
+            -path "*/$SUBJECT/*" \
+            -exec test -f "{}/mri/T1.mgz" \; \
+            -exec test -f "{}/mri/aparc+aseg.mgz" \; \
+            -print
+    )
 else
-    subj_dirs=("$FS_BASE"/*)
+    subj_dirs=("$FS_BASE"/*/*)
 fi
+
 
 for subj_dir in "${subj_dirs[@]}"; do
 

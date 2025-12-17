@@ -1,27 +1,40 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
-SRC_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/PET/nii_wave2"
+DICOM_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/PET"
 DST_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS"
 SESSION="Y0"
 
-for SRC_DIR in "${SRC_BASE}"/sub-*; do
-    [[ -d "$SRC_DIR" ]] || continue
+for DICOM_SUB in "${DICOM_BASE}"/IAM_*; do
+    [[ -d "$DICOM_SUB" ]] || continue
 
-    subj=$(basename "$SRC_DIR")
-    subj_id="${subj#sub-}"
+    subj=$(basename "$DICOM_SUB")
+    subj_id="${subj#IAM_}"
 
     DST_DIR="${DST_BASE}/sub-${subj_id}/ses-${SESSION}/pet"
     mkdir -p "$DST_DIR"
 
-    for f in "$SRC_DIR"/*; do
+    # Skip subject if output folder already has files
+    if [[ $(ls -A "$DST_DIR") ]]; then
+        echo "Skipping subject $subj_id, output already exists."
+        continue
+    fi
+
+    echo "Converting DICOMs for subject $subj_id..."
+    # Convert DICOMs to NIfTI
+    dcm2niix -b y -f "%f_%s_%p_%d" -z y -o "$DST_DIR" "$DICOM_SUB"
+
+    # Rename resulting files according to previous convention
+    for f in "$DST_DIR"/*; do
+        [[ -f "$f" ]] || continue
         fname=$(basename "$f")
 
-        # Remove sub-<sub>_<series>_
-        rest="${fname#sub-${subj_id}_}"
+        # Remove IAM_<sub>_<series>_ or sub-<sub>_ prefix if present
+        rest="${fname#IAM_${subj_id}_}"
+        rest="${rest#sub-${subj_id}_}"
         rest="${rest#*_}"
 
-        # Remove MUSC_
+        # Remove MUSC_ if present
         rest="${rest/MUSC_/}"
 
         # Base output name
@@ -37,28 +50,22 @@ for SRC_DIR in "${SRC_BASE}"/sub-*; do
 
         out="${DST_DIR}/${base}"
 
-        # If name exists, append _a, _b, _c...
+        # Append _a, _b etc. if duplicate
         if [[ -e "$out" ]]; then
-            ext=""
-            stem="$out"
-
-            # Handle .nii.gz explicitly
             if [[ "$out" == *.nii.gz ]]; then
-                ext=".nii.gz"
                 stem="${out%.nii.gz}"
+                ext=".nii.gz"
             else
-                ext=".${out##*.}"
                 stem="${out%.*}"
+                ext=".${out##*.}"
             fi
-
             suffix=a
             while [[ -e "${stem}_${suffix}${ext}" ]]; do
                 suffix=$(printf "%b" "$(printf '\\%03o' $(( $(printf '%d' "'$suffix") + 1 )) )")
             done
-
             out="${stem}_${suffix}${ext}"
         fi
 
-        cp "$f" "$out"
+        mv -- "$f" "$out"
     done
 done
