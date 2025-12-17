@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SRC_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/PET/nii_wave1"
+SRC_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/PET/nii_wave2"
 DST_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS"
 SESSION="Y0"
 
