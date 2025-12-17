@@ -74,11 +74,11 @@ def roimean(subDir):
 
 
 # --- Paths ---
-mainDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/pet_suv/mSUVr_2025'
-redCap_FS = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/pet_suv/mSUVr_2025/IAMDatabaseY0-FreeSurferNormalizat_DATA_2025-09-19_1637.csv'
+mainDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv/florbetaben'
+redCap_FS = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv/IAMDatabaseY0-FreeSurferNormalizat_DATA_2025-12-15_1244.csv'
 outDir = mainDir
 
-subjects = sorted(glob.glob(op.join(mainDir, 'IAM_*')))
+subjects = sorted(glob.glob(op.join(mainDir, 'sub-*')))
 subID = [op.basename(x) for x in subjects]
 
 # --- Parallel ROI means ---

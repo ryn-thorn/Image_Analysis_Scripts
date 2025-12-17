@@ -5,12 +5,12 @@ from shutil import copyfile
 import subprocess
 from itertools import compress
 
-petDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/pet_suv/mSUVr_2025'
-fsDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/freesurfer/freesurfer_6.0/03_Analysis'
-roi_target = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Analysis/IAM_BIDS/derivatives/pet/pet_suv/mSUVr_2025/target_rois.txt'
+petDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv/florbetaben'
+fsDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/Preprocessing/freesurfer/freesurfer_6.0'
+roi_target = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv/target_rois.txt'
 
-paths_pet = sorted(glob.glob(op.join(petDir, 'IAM_*')))
-paths_fs = sorted(glob.glob(op.join(fsDir, 'IAM_*')))
+paths_pet = sorted(glob.glob(op.join(petDir, 'sub-*')))
+paths_fs = sorted(glob.glob(op.join(fsDir, 'sub-*')))
 paths_out = []
 
 # Find subjects that have both PET and FS Segmentations
@@ -27,7 +27,7 @@ for idx, (path_pet, path_fs) in enumerate(zip(paths_pet, paths_fs)):
     sub = op.basename(path_pet)
     roiDir = op.join(path_pet, 'roi')
     os.makedirs(roiDir, exist_ok=True)
-    arg = ['fsmakeroi', '-o', roiDir, op.join(path_fs, 'mri', 'aparc+aseg.mgz'), roi_target]
+    arg = ['fsmakeroi', '-o', roiDir, op.join(path_fs, 'ses-Y0', 'mri', 'aparc+aseg.mgz'), roi_target]
     completion = subprocess.run(arg)
     if completion.returncode != 0:
         failedRun.append(sub)

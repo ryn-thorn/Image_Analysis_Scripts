@@ -10,8 +10,8 @@ set -euo pipefail
 # ============================================
 # Usage
 # ============================================
-if [[ $# -lt 5 || $# -gt 6 ]]; then
-    echo "Usage: $0 <FS_BASE> <OUT_BASE> <DKI_BASE> <RAW_BASE> <PY_THRESHOLD> [--force]"
+if [[ $# -lt 5 || $# -gt 8 ]]; then
+    echo "Usage: $0 <FS_BASE> <OUT_BASE> <DKI_BASE> <RAW_BASE> <PY_THRESHOLD> [--force] [--subject SUBJID]"
     echo "Example:"
     echo "  ./native_subcortical_roi_analysis.sh \\"
     echo "    /path/to/freesurfer \\"
@@ -28,13 +28,29 @@ OUT_BASE="$2"
 DKI_BASE="$3"
 RAW_BASE="$4"
 PY_THRESHOLD="$5"
-FORCE="${6:-false}"
 
-if [[ "$FORCE" == "--force" ]]; then
-    FORCE=true
-else
-    FORCE=false
-fi
+FORCE=false
+SUBJECT=""
+
+shift 5
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --force)
+            FORCE=true
+            ;;
+        --subject)
+            SUBJECT="$2"
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+
 
 # ============================================
 # ROI IDs and Names
@@ -92,7 +108,14 @@ find_nii() {
 # ============================================
 echo "Looking in $FS_BASE"
 
-for subj_dir in "$FS_BASE"/*; do
+if [[ -n "$SUBJECT" ]]; then
+    subj_dirs=("$FS_BASE/$SUBJECT")
+else
+    subj_dirs=("$FS_BASE"/*)
+fi
+
+for subj_dir in "${subj_dirs[@]}"; do
+
     subj=$(basename "$subj_dir")
     aseg="${subj_dir}/mri/aparc+aseg.mgz"
     fs_t1_mgz="${subj_dir}/mri/T1.mgz"
