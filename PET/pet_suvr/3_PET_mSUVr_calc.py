@@ -74,7 +74,7 @@ def roimean(subDir):
 
 
 # --- Paths ---
-mainDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv/florbetaben'
+mainDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv'
 redCap_FS = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv/IAMDatabaseY0-FreeSurferNormalizat_DATA_2025-12-15_1244.csv'
 outDir = mainDir
 

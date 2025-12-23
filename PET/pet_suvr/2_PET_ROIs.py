@@ -5,7 +5,7 @@ from shutil import copyfile
 import subprocess
 from itertools import compress
 
-petDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv/florbetaben'
+petDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv'
 fsDir = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/Preprocessing/freesurfer/freesurfer_6.0'
 roi_target = '/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS/derivatives/PET/pet_suv/target_rois.txt'
 

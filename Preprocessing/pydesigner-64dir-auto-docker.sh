@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #######################################
 #
-# PyDesigner Preprocessing hands off
+# PyDesigner Preprocessing with Docker
 # See https://pydesigner.readthedocs.io/en/latest/index.html for more details
 #
 #######################################
@@ -48,6 +48,11 @@ if [[ ! -d "$BASE" ]]; then
     echo "ERROR: Base directory $BASE does not exist."
     exit 1
 fi
+
+# Docker image + mount point
+PYD_DOCKER_IMG="dmri/neurodock"
+PYD_MOUNT="/data"
+
 
 #####################################
 # Setup output + logging (UNCHANGED)
@@ -125,12 +130,27 @@ for ses_path in "$BASE"/sub-*/ses-*; do
     fi
 
 
-    echo "  -> Running PyDesigner..."
-    if [[ -n "${safe2:-}" ]]; then
-        pydesigner -o "$subj_out" -s "$safe1" "$safe2" || error_exit "PyDesigner failed for $subj $ses"
-    else
-        pydesigner -o "$subj_out" -s "$safe1" || error_exit "PyDesigner failed for $subj $ses"
-    fi
+	echo "  -> Running PyDesigner (Docker)..."
+	
+	# Convert host paths to container paths
+	safe1_docker="$PYD_MOUNT${safe1#$BASE}"
+	subj_out_docker="$PYD_MOUNT${subj_out#$BASE}"
+	
+	if [[ -n "${safe2:-}" ]]; then
+		safe2_docker="$PYD_MOUNT${safe2#$BASE}"
+	
+		docker run --rm \
+			-v "$BASE:$PYD_MOUNT" \
+			"$PYD_DOCKER_IMG" \
+			pydesigner -o "$subj_out_docker" -s "$safe1_docker" "$safe2_docker" \
+			|| error_exit "PyDesigner failed for $subj $ses"
+	else
+		docker run --rm \
+			-v "$BASE:$PYD_MOUNT" \
+			"$PYD_DOCKER_IMG" \
+			pydesigner -o "$subj_out_docker" -s "$safe1_docker" \
+			|| error_exit "PyDesigner failed for $subj $ses"
+	fi
 
     echo -e "\033[1;32mFinished $subj $ses.\033[0m"
 done
