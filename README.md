@@ -17,15 +17,18 @@ PyDesigner:
 
 Freesurfer: 
 
-docker run --rm \
-  -v /path/to/input:/data \
-  -v /path/to/output:/subjects \
-  freesurfer:6.0 \
-  recon-all \
-    -i /data/sub-01_T1w.nii.gz \
-    -s sub-01 \
-    -all
+# FreeSurfer 6.0 Docker Runner
 
+## One-time setup
+1. Install Docker
+2. Build the image:
+   docker build -t freesurfer:6.0 .
+
+## Run (GUI)
+Double-click `run_freesurfer_gui.py`
+
+## Run (command line)
+./run_freesurfer_bids /path/to/BIDS
 
 ViSTa processing: 
 
