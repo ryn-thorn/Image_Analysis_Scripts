@@ -9,115 +9,20 @@ www.bridgelab.info</br>
 
 <img src="https://www.bridge-lab.org/storage/329/9f17e7e8-434b-4d67-85f7-bc57bcd496cc/bridge-logo.png">
 
-<h1>Script Documentation</h1>
+## Docker Setup
 
-<h2>Preprocessing</h2>
+### Step 1: Install Docker
+- macOS / Windows: [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)  
+- Linux: Install Docker Engine via your package manager (`apt`, `yum`, etc.)  
 
-PyDesigner: 
+### Step 2: Check Installation
+- Verify installation by running:
+```bash
+docker run hello-world
 
-Freesurfer: 
+## Freesurfer 6.0 Docker Container
 
-# FreeSurfer 6.0 Docker Runner
+### Step 1: Download Freesurfer Docker Package
 
-## One-time setup
-1. Install Docker
-2. Build the image:
-   docker build -t freesurfer:6.0 .
-
-## Run (GUI)
-Double-click `run_freesurfer_gui.py`
-
-## Run (command line)
-./run_freesurfer_bids /path/to/BIDS
-
-ViSTa processing: 
-
-<pre><code>python /path/tovista.py \
-    /path/to/vista.nii /path/to/reference.nii /path/to/output/</code></pre>
-
-<h2>Registration</h2>
-
-Integrated DTI-TK and TBSS with optional ROI Analysis: 
-
-<pre><code>
-# 1_DTI-TK.sh
-   /path/to/1_DTI-TK.sh \
-      --input /path/to/dki_pydesigner \
-      --output /path/to/dti-tk \
-      --subjects sub-101 sub-104 sub-110 \
-      --bet-thr 0.25
-</code></pre>
-      
-<pre><code>
-# 2_TBSS.sh
-   /path/to//2_TBSS.sh \
-      --input /path/to/derivatives/dti-tk \
-      --output /path/to/derivatives/tbss \
-      --subjects sub-101 sub-104 sub-110 \
-      --wmmets    
-</code></pre>
-
-<pre><code>
-# 3_Stats.sh
-   /path/to//3_StatsS.sh \
-      coming soon!    
-</code></pre>
-
-<h2>Segmentation</h2>
-
-Freesurfer recon-all -all Segmentation: 
-
-<pre><code>
-    /path/to/freesurfer-reconall.sh \
-       --input /path/to/T1s \
-       --output /path/to/freesurfer_output \
-       --subjects A001 A002 A003
-</code></pre>
-
-NOMIS Normalization: 
-
-<pre><code>
-    /path/to/FS_NOMIS.sh \
-       --base /base/derivatives/freesurfer \
-       --csv /path/to/PUMA_norms.csv \
-       --nomis /path/to/NOMIS.py \
-       --output /base/derivatives/nomis \
-       --env [name of nomis conda env]
-</code></pre>
-
-Lesion Segmentation Tool: 
-
-<pre><code>
-    /path/to/run_lst.sh /path/to/raw_data_ /path/to/Outputs 
-</code></pre>
-
-<h2>Native Space Analysis</h2>
-
-TractSeg: 
-
-Requires manual script edits at the moment; automation coming soon.
-
-Gross White Matter Estimation: 
-
-<pre><code>
-    /path/to/gross_wm_thr.sh /path/to/base_dir /path/to/out_dir /path/to/output.csv 
-</code></pre>
-
-<h2>PET and MRS</h2>
-
-Centiloid Processing: 
-
-MRS T1 Mask Conversion:
-
-<pre><code>
-    python MRS_T1_Mask.py mrs_complex_nifti t1_nifti output_mask>
-</code></pre>
-
-<h2>Miscellaneous</h2>
-
-Converting a complex NiFTi to a FLOAT23 NiFTi: 
-
-<pre><code>
-    python convert_complex_to_float.py input.nii output.nii
-</code></pre>
-
+cd /path/to/freesurfer-6.0-docker
+docker build -t freesurfer:6.0 .
