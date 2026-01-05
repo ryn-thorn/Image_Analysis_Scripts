@@ -12,13 +12,14 @@ www.bridgelab.info</br>
 ## Docker Setup
 
 ### Step 1: Install Docker
-- macOS / Windows: [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)  
-- Linux: Install Docker Engine via your package manager (`apt`, `yum`, etc.)  
+- <b>macOS / Windows</b>: [Download Docker Desktop](https://www.docker.com/products/docker-desktop/)  
+- <b>Linux</b>: Install Docker Engine via your package manager (`apt`, `yum`, etc.)  
 
 ### Step 2: Check Installation
 - Verify installation by running:
 ```bash
 docker run hello-world
+````
 
 ## Freesurfer 6.0 Docker Container
 
