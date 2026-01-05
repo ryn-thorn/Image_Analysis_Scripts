@@ -85,6 +85,23 @@ process_folder() {
             infile="$subj/$fname"
             [[ -f "$infile" ]] || continue
 
+            # -------------------------------------------------
+            # PET / PiB sanitization (ADDED)
+            # -------------------------------------------------
+            dim4=$(fslval "$infile" dim4)
+
+            if [[ "$dim4" -gt 1 ]]; then
+                log "[INFO] ($subjID) $fname is 4D (${dim4} vols) → extracting first volume"
+                infile_3d="${TMP_DIR}/${subjID}_${fname%.nii.gz}_3D.nii.gz"
+                fslroi "$infile" "$infile_3d" 0 1
+                infile="$infile_3d"
+            fi
+
+            stdfile="${TMP_DIR}/${subjID}_${fname%.nii.gz}_std.nii.gz"
+            fslreorient2std "$infile" "$stdfile"
+            infile="$stdfile"
+            # -------------------------------------------------
+
             outlin="${TMP_DIR}/${subjID}_${fname%.nii.gz}_lin2MNI.nii.gz"
             mat="${outlin%.nii.gz}.mat"
 
@@ -95,7 +112,11 @@ process_folder() {
                 flirt -in "$infile" -ref "$MNI_TEMPLATE" -out "$outlin" -omat "$mat"
             fi
 
-            LINEAR_MERGE_LIST+=("$outlin")
+            if [[ -f "$outlin" ]]; then
+                LINEAR_MERGE_LIST+=("$outlin")
+            else
+                log "[ERROR] FLIRT failed for $subjID $fname — excluding from merge"
+            fi
         done
     done
 
@@ -166,7 +187,6 @@ process_folder() {
             regfile="${subj}/${fname%.nii.gz}_MNI.nii.gz"
             [[ -f "$regfile" ]] || continue
 
-            # Avoid duplicate CSV rows
             if grep -q "^${subjID},${fname%.nii.gz}_MNI.nii.gz" "$CSV_FILE"; then
                 log "[SKIP] ROI already extracted: $subjID $fname"
                 continue

@@ -13,9 +13,19 @@ www.bridgelab.info</br>
 
 <h2>Preprocessing</h2>
 
-Standard PyDesigner processing: 
+PyDesigner: 
 
-<pre><code>/path/to/pyd_preproc.sh --base /path/to/BIDS_folder</code></pre>
+Freesurfer: 
+
+docker run --rm \
+  -v /path/to/input:/data \
+  -v /path/to/output:/subjects \
+  freesurfer:6.0 \
+  recon-all \
+    -i /data/sub-01_T1w.nii.gz \
+    -s sub-01 \
+    -all
+
 
 ViSTa processing: 
 
