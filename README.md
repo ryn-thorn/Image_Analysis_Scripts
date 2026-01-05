@@ -18,12 +18,18 @@ www.bridgelab.info</br>
 ### Step 2: Check Installation
 - Verify installation by running:
 ```bash
-docker run hello-world
-````
+docker --version
+```
 
 ## Freesurfer 6.0 Docker Container
 
 ### Step 1: Download Freesurfer Docker Package
 
+```
+svn checkout https://github.com/ryn-thorn/Image_Analysis_Scripts/trunk/Preprocessing/freesurfer-6.0-docker
+```
+
+```
 cd /path/to/freesurfer-6.0-docker
 docker build -t freesurfer:6.0 .
+```
