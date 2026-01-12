@@ -22,7 +22,7 @@ def linear_register(in_file, ref_file, out_file):
 def nonlinear_register(in_file, ref_file, out_file):
     """Nonlinear registration using FNIRT."""
     mat_file = in_file.replace('.nii.gz','.mat')
-    run(['fnirt', '--in=' + in_file, '--aff=' + mat_file, '--ref=' + ref_file, '--iout=' + out_file])
+    run(['fnirt', '--in=', in_file, '--ref=', ref_file, '--aff=', mat_file, '--iout=', out_file])
 
 def average_images(image_files, out_file):
     """Average a list of images."""
