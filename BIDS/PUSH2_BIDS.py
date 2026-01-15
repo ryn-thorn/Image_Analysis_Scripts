@@ -392,7 +392,7 @@ def main():
     parser.add_argument("--input", required=True, help="Directory containing .zip files")
     parser.add_argument("--output", required=True, help="Output BIDS directory")
     parser.add_argument("--log", help="Override log file path")
-    parser.add_argument("--overwrite", action="true", help="Overwrite existing session data.")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing session data.")
     parser.add_argument("--dry-run", action="store_true", help="Parse + extract only, no dcm2niix.")
 
     args = parser.parse_args()

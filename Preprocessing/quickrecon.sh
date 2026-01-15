@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Subjects to process
-SUBJECTS=(1204 1218 1219 1220 1224 1229)
+SUBJECTS=(1223 1224 1225 1226 1227 1229)
 
 # Base paths
 RAW_BASE="/Volumes/vdrive/helpern_users/helpern_j/IAM/IAM_Imaging/MRI/IAM_BIDS"
