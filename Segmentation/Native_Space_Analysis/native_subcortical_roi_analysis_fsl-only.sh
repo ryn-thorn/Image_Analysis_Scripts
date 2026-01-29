@@ -1,255 +1,200 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
 set -euo pipefail
-shopt -s nullglob
 
-# -----------------------------
-# Force FIRST to run locally
-# -----------------------------
-export FSLPARALLEL=0
-unset SGE_ROOT SGE_CELL SGE_QMASTER_PORT SGE_EXECD_PORT
-
-# -----------------------------
-# Check inputs
-# -----------------------------
-if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <BIDS_FOLDER> <PYDESIGNER_FOLDER> <OUTPUT_FOLDER>"
-    exit 1
+#################################
+# CHECK INPUT
+#################################
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 <BIDS_ROOT>"
+  exit 1
 fi
 
-BIDS_FOLDER=$1
-PYDESIGNER_FOLDER=$2
-OUT_FOLDER=$3
+BIDS_ROOT="$1"
 
-mkdir -p "$OUT_FOLDER"
+#################################
+# DERIVATIVE PATHS
+#################################
+SEG_ROOT="${BIDS_ROOT}/derivatives/Segmentation/native_subcortical_roi_analysis/fsl-only"
+DWI_ROOT="${BIDS_ROOT}/derivatives/Preprocessing/pydesigner/dki-pydesigner"
 
-ROI_MEANS_FILE="$OUT_FOLDER/roi_means.csv"
-ROI_VOXELS_FILE="$OUT_FOLDER/roi_voxel_vals.csv"
+MEANS_CSV="${SEG_ROOT}/roi_means.csv"
+VOXELS_CSV="${SEG_ROOT}/roi_voxels.csv"
 
-> "$ROI_MEANS_FILE"
-> "$ROI_VOXELS_FILE"
+mkdir -p "${SEG_ROOT}"
 
-METRICS=("dki_mk" "dti_fa" "dti_md")
-HEADERS_CREATED=false
+#################################
+# ROI DEFINITIONS
+#################################
+ROIS=(
+  "L_Thal:110"
+  "L_Caud:111"
+  "L_Puta:112"
+  "L_Pall:113"
+  "BrStem:116"
+  "L_Hipp:117"
+  "L_Amyg:118"
+  "L_Accu:126"
+  "R_Thal:149"
+  "R_Caud:150"
+  "R_Puta:151"
+  "R_Pall:152"
+  "R_Hipp:153"
+  "R_Amyg:154"
+  "R_Accu:158"
+)
 
-# -----------------------------
-# Loop over subjects/sessions
-# -----------------------------
-for sub_dir in "$BIDS_FOLDER"/sub-*; do
-    [[ -d "$sub_dir" ]] || continue
-    sub=$(basename "$sub_dir")
+#################################
+# METRICS
+#################################
+METRICS=(
+  "dki_mk"
+  "dti_fa"
+  "dti_md"
+)
 
-    for ses_dir in "$sub_dir"/ses-*; do
-        [[ -d "$ses_dir" ]] || continue
-        ses=$(basename "$ses_dir")
+#################################
+# INITIALIZE CSVs
+#################################
+echo "sub,ses,metric,roi,mean" > "${MEANS_CSV}"
+echo "sub,ses,roi,voxels,volume_mm3" > "${VOXELS_CSV}"
 
-        echo "=============================="
-        echo "Processing $sub $ses"
-        echo "=============================="
+#################################
+# FAILURE LOG
+#################################
+FAIL_LOG="${SEG_ROOT}/failed_subjects.log"
+echo "sub,ses,step,error_message" > "${FAIL_LOG}"
 
-        OUT_SUB="$OUT_FOLDER/$sub/$ses"
-        mkdir -p "$OUT_SUB/intermediate"
+#################################
+# SAFE RUN FUNCTION
+#################################
+safe_run() {
+    local SUB="$1"
+    local SES="$2"
+    local STEP="$3"
+    shift 3
+    "$@" || {
+        echo "${SUB},${SES},${STEP},FAILED" >> "${FAIL_LOG}"
+        echo "  WARNING: ${STEP} failed for ${SUB} ${SES}, skipping..."
+        return 1
+    }
+}
 
-        # -----------------------------
-        # T1 + BET
-        # -----------------------------
-        T1_IN=$(find "$ses_dir"/anat -name "*_T1w.nii*" | head -n1)
-        if [[ ! -f "$T1_IN" ]]; then
-            echo "Warning: No T1 found, skipping $sub $ses"
+#################################
+# MAIN LOOP
+#################################
+for SUB_DIR in "${BIDS_ROOT}"/sub-*; do
+    SUB=$(basename "${SUB_DIR}")
+
+    for SES_DIR in "${SUB_DIR}"/ses-*; do
+        SES=$(basename "${SES_DIR}")
+
+        echo "Processing ${SUB} ${SES}"
+
+        WORKDIR="${SEG_ROOT}/${SUB}/${SES}"
+        mkdir -p "${WORKDIR}"
+        cd "${WORKDIR}"
+
+        #################################
+        # COPY T1
+        #################################
+        T1_SRC="${BIDS_ROOT}/${SUB}/${SES}/anat/${SUB}_${SES}_T1w.nii.gz"
+        [[ -f "${T1_SRC}" ]] || { 
+            echo "  Missing T1, skipping"
+            echo "${SUB},${SES},COPY_T1,MISSING" >> "${FAIL_LOG}"
             continue
-        fi
+        }
+        safe_run "$SUB" "$SES" "COPY_T1" cp "${T1_SRC}" T1.nii.gz || continue
 
-        cp "$T1_IN" "$OUT_SUB/T1.nii"
+        #################################
+        # SYNTHSTRIP (replaces BET)
+        #################################
+        SYNTHSTRIP_IMG="synthstrip.nii.gz"
+        SYNTHSTRIP_MASK="synthstrip_mask.nii.gz"
 
-        if [ ! -f "$OUT_SUB/T1_bet.nii" ]; then
-            echo "Running BET for $sub $ses"
-            bet "$OUT_SUB/T1.nii" "$OUT_SUB/T1_bet_temp.nii" -f 0.4
-            bet "$OUT_SUB/T1_bet_temp.nii" "$OUT_SUB/T1_bet.nii" -f 0.4 -g -0.5
-            rm -f "$OUT_SUB/T1_bet_temp.nii"
+        if [[ -f "${SYNTHSTRIP_MASK}" ]]; then
+            echo "  SynthStrip already done, skipping"
         else
-            echo "Skipping BET (already exists)"
+            echo "  Running SynthStrip via Docker"
+            safe_run "$SUB" "$SES" "SYNTHSTRIP" docker run --rm \
+                -v ~/license.txt:/Applications/freesurfer/6.0.0/license.txt:ro \
+                -v "${WORKDIR}":/data \
+                freesurfer/freesurfer:7.4.1 \
+                mri_synthstrip \
+                    -i /data/T1.nii.gz \
+                    -o /data/${SYNTHSTRIP_IMG} \
+                    -m /data/${SYNTHSTRIP_MASK} || continue
         fi
 
-        # -----------------------------
-        # FAST
-        # -----------------------------
-        if [ ! -f "$OUT_SUB/CSF.nii" ] || [ ! -f "$OUT_SUB/WM.nii" ] || [ ! -f "$OUT_SUB/GM.nii" ]; then
-            echo "Running FAST for $sub $ses"
-            fast -g "$OUT_SUB/T1_bet.nii"
-
-            mv "$OUT_SUB/T1_bet_seg_0.nii.gz" "$OUT_SUB/CSF.nii"
-            mv "$OUT_SUB/T1_bet_seg_1.nii.gz" "$OUT_SUB/WM.nii"
-            mv "$OUT_SUB/T1_bet_seg_2.nii.gz" "$OUT_SUB/GM.nii"
-
-            mv -f "$OUT_SUB"/T1_bet_* "$OUT_SUB/intermediate/" 2>/dev/null || true
+        #################################
+        # FAST 
+        #################################
+        if [[ -f synthstrip_seg_2.nii.gz ]]; then
+            echo "  FAST already done, skipping"
         else
-            echo "Skipping FAST (CSF/WM/GM already exist)"
+            # FAST expects a brain-extracted T1; we use the synthstrip brain
+            safe_run "$SUB" "$SES" "FAST" fast -g "${SYNTHSTRIP_IMG}" || continue
         fi
 
-        # -----------------------------
-        # FIRST (T1 space)
-        # -----------------------------
-        if [ ! -f "$OUT_SUB/first-merged_first.bvars" ]; then
-            echo "Running FIRST for $sub $ses"
-            run_first_all -i "$OUT_SUB/T1_bet.nii" -o "$OUT_SUB/first"
+        #################################
+        # FIRST (use L_Thal_first.vtk as sentinel)
+        #################################
+        if [[ -f first-L_Thal_first.vtk ]]; then
+            echo "  FIRST already done, skipping"
         else
-            echo "Skipping FIRST (bvars/vtk already exist)"
+            safe_run "$SUB" "$SES" "FIRST" run_first_all -i T1.nii.gz -o first || continue
         fi
 
-        # -----------------------------
-        # Convert FIRST meshes → volumes
-        # -----------------------------
-        for vtk in "$OUT_SUB"/first-*_first.vtk; do
-            base=$(basename "$vtk" _first.vtk)
-            struct=${base#first-}
-            OUT_MESH="$OUT_SUB/${base}_corr.nii.gz"
+        #################################
+        # B0 + REGISTRATION
+        #################################
+        DWI_PRE="${DWI_ROOT}/${SUB}/${SES}/dwi_preprocessed.nii"
+        [[ -f "${DWI_PRE}" ]] || { 
+            echo "  Missing DWI, skipping" 
+            echo "${SUB},${SES},DWI,MISSING" >> "${FAIL_LOG}"
+            continue
+        }
 
-            # Skip if already done
-            if [ -f "$OUT_MESH" ]; then
-                echo "Skipping meshToVol for $struct (already exists)"
+        safe_run "$SUB" "$SES" "FSLROI" fslroi "${DWI_PRE}" B0.nii.gz 0 1 || continue
+        safe_run "$SUB" "$SES" "FLIRT_B0" flirt -in B0.nii.gz -ref T1.nii.gz -omat B0_to_T1.mat || continue
+        safe_run "$SUB" "$SES" "INV_XFM" convert_xfm -omat T1_to_B0.mat -inverse B0_to_T1.mat || continue
+        safe_run "$SUB" "$SES" "GM_FLIRT" flirt -in synthstrip_seg_2.nii.gz -ref B0.nii.gz -applyxfm -init T1_to_B0.mat -interp nearestneighbour -out GM_B0.nii.gz || continue
+
+        #################################
+        # ROI LOOP
+        #################################
+        for ROI_PAIR in "${ROIS[@]}"; do
+            ROI="${ROI_PAIR%%:*}"
+            LABEL="${ROI_PAIR##*:}"
+
+            if [[ -f "${ROI}_B0_masked.nii.gz" ]]; then
+                echo "  ROI ${ROI} already processed, skipping"
                 continue
             fi
 
-            case "$struct" in
-                L_Thal) label=10 ;;
-                L_Caud) label=11 ;;
-                L_Puta) label=12 ;;
-                L_Pall) label=13 ;;
-                BrStem) label=16 ;;
-                L_Hipp) label=17 ;;
-                L_Amyg) label=18 ;;
-                L_Accu) label=26 ;;
-                R_Thal) label=49 ;;
-                R_Caud) label=50 ;;
-                R_Puta) label=51 ;;
-                R_Pall) label=52 ;;
-                R_Hipp) label=53 ;;
-                R_Amyg) label=54 ;;
-                R_Accu) label=58 ;;
-                *)
-                    echo "Skipping unknown FIRST structure: $struct"
-                    continue
-                    ;;
-            esac
+            safe_run "$SUB" "$SES" "MESH_TO_VOL_${ROI}" first_utils --meshToVol -i "${SYNTHSTRIP_IMG}" -m "first-${ROI}_first.vtk" -r "${SYNTHSTRIP_IMG}" -l "${LABEL}" -o "${ROI}.nii.gz" || continue
+            safe_run "$SUB" "$SES" "BIN_${ROI}" fslmaths "${ROI}.nii.gz" -bin "${ROI}.nii.gz" || continue
+            safe_run "$SUB" "$SES" "FLIRT_ROI_${ROI}" flirt -in "${ROI}.nii.gz" -ref B0.nii.gz -applyxfm -init T1_to_B0.mat -interp nearestneighbour -out "${ROI}_B0.nii.gz" || continue
+            safe_run "$SUB" "$SES" "MASK_ROI_${ROI}" fslmaths "${ROI}_B0.nii.gz" -mul GM_B0.nii.gz "${ROI}_B0_masked.nii.gz" || continue
 
-            first_utils --meshToVol \
-                -i "$OUT_SUB/T1_bet.nii" \
-                -m "$vtk" \
-                -r "$OUT_SUB/T1_bet.nii" \
-                -l "$label" \
-                -o "$OUT_MESH"
+            # VOXEL STATS
+            read VOX VOL <<< $(fslstats "${ROI}_B0_masked.nii.gz" -V) || { echo "${SUB},${SES},VOXEL_STATS_${ROI},FAILED" >> "${FAIL_LOG}"; continue; }
+            echo "${SUB},${SES},${ROI},${VOX},${VOL}" >> "${VOXELS_CSV}"
 
-            # Binarize ROI
-            fslmaths "$OUT_MESH" -bin "$OUT_MESH"
+            # METRIC LOOP
+            for METRIC in "${METRICS[@]}"; do
+                METRIC_IMG="${DWI_ROOT}/${SUB}/${SES}/metrics/${METRIC}.nii"
+                [[ -f "${METRIC_IMG}" ]] || continue
+                MEAN=$(fslmeants -i "${METRIC_IMG}" -m "${ROI}_B0_masked.nii.gz") || { echo "${SUB},${SES},METRIC_${METRIC}_${ROI},FAILED" >> "${FAIL_LOG}"; continue; }
+                echo "${SUB},${SES},${METRIC},${ROI},${MEAN}" >> "${MEANS_CSV}"
+            done
         done
-
-        # -----------------------------
-        # Populate ROI_NAMES from existing masked_B0.nii files
-        # -----------------------------
-        ROI_NAMES=()
-        for f in "$OUT_SUB"/*_masked_B0.nii; do
-            [ -f "$f" ] || continue
-            ROI_NAMES+=("$(basename "$f" _masked_B0.nii)")
-        done
-
-        # -----------------------------
-        # Diffusion / B0
-        # -----------------------------
-        DWI_DIR="$PYDESIGNER_FOLDER/$sub/$ses"
-        DWI_PRE="$DWI_DIR/dwi_preprocessed.nii"
-
-        if [[ ! -f "$DWI_PRE" ]]; then
-            echo "Warning: No dwi_preprocessed.nii, skipping $sub $ses"
-        else
-            cp "$DWI_PRE" "$OUT_SUB/dwi_preprocessed.nii"
-            fslroi "$OUT_SUB/dwi_preprocessed.nii" "$OUT_SUB/B0.nii" 0 1
-
-            flirt -in "$OUT_SUB/B0.nii" \
-                  -ref "$OUT_SUB/T1.nii" \
-                  -omat "$OUT_SUB/B0_to_T1.mat" \
-                  -out "$OUT_SUB/B0_in_T1.nii"
-
-            convert_xfm -omat "$OUT_SUB/T1_to_B0.mat" \
-                        -inverse "$OUT_SUB/B0_to_T1.mat"
-
-            # -----------------------------
-            # Move ROIs to B0
-            # -----------------------------
-            corr_rois=("$OUT_SUB"/*_corr.nii.gz)
-            for roi in "${corr_rois[@]}"; do
-                B0_ROI="${roi%.nii.gz}_B0.nii.gz"
-                if [ ! -f "$B0_ROI" ]; then
-                    flirt -in "$roi" \
-                          -ref "$OUT_SUB/B0.nii" \
-                          -applyxfm -init "$OUT_SUB/T1_to_B0.mat" \
-                          -interp nearestneighbour \
-                          -out "$B0_ROI"
-                fi
-            done
-
-            for tissue in CSF WM; do
-                B0_TISSUE="$OUT_SUB/${tissue}_B0.nii"
-                if [ ! -f "$B0_TISSUE" ]; then
-                    flirt -in "$OUT_SUB/${tissue}.nii" \
-                          -ref "$OUT_SUB/B0.nii" \
-                          -applyxfm -init "$OUT_SUB/T1_to_B0.mat" \
-                          -interp nearestneighbour \
-                          -out "$B0_TISSUE"
-                fi
-            done
-
-            # -----------------------------
-            # Mask ROIs
-            # -----------------------------
-            for roi in "$OUT_SUB"/*_corr_B0.nii.gz; do
-                base=$(basename "$roi" _corr_B0.nii.gz)
-                OUT_MASKED="$OUT_SUB/${base}_masked_B0.nii"
-                if [ ! -f "$OUT_MASKED" ]; then
-                    fslmaths "$roi" \
-                        -mas "$OUT_SUB/CSF_B0.nii" -binv \
-                        -mas "$OUT_SUB/WM_B0.nii" -binv \
-                        "$OUT_MASKED"
-                fi
-            done
-        fi
-
-        # -----------------------------
-        # CSV headers
-        # -----------------------------
-        if [ "$HEADERS_CREATED" = false ] && [ ${#ROI_NAMES[@]} -gt 0 ]; then
-            echo "Sub,ses,metric,${ROI_NAMES[*]}" | tr ' ' ',' >> "$ROI_MEANS_FILE"
-            echo "Sub,ses,${ROI_NAMES[*]}" | tr ' ' ',' >> "$ROI_VOXELS_FILE"
-            HEADERS_CREATED=true
-        fi
-
-        # -----------------------------
-        # Metric extraction
-        # -----------------------------
-        if [ ${#ROI_NAMES[@]} -gt 0 ] && [ -f "$DWI_DIR/metrics/${METRICS[0]}.nii" ]; then
-            METRICS_DIR="$DWI_DIR/metrics"
-
-            for metric in "${METRICS[@]}"; do
-                line="$sub,$ses,$metric"
-                for roi in "${ROI_NAMES[@]}"; do
-                    val=$(fslmeants -i "$METRICS_DIR/${metric}.nii" \
-                                    -m "$OUT_SUB/${roi}_masked_B0.nii" 2>/dev/null || echo "")
-                    line+=",$val"
-                done
-                echo "$line" >> "$ROI_MEANS_FILE"
-            done
-
-            line="$sub,$ses"
-            for roi in "${ROI_NAMES[@]}"; do
-                vox=$(fslstats "$OUT_SUB/${roi}_masked_B0.nii" -V | awk '{print $1}')
-                line+=",$vox"
-            done
-            echo "$line" >> "$ROI_VOXELS_FILE"
-        fi
-
     done
 done
 
-echo "================================="
-echo "Processing complete."
-echo "Outputs saved to $OUT_FOLDER"
-echo "================================="
+
+echo "======================================"
+echo "Finished."
+echo "Means  CSV : ${MEANS_CSV}"
+echo "Voxels CSV : ${VOXELS_CSV}"
+echo "Failures   : ${FAIL_LOG}"
+echo "======================================"

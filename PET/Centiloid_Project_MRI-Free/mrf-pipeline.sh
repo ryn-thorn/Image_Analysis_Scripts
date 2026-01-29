@@ -52,13 +52,22 @@ for SUBJ_PATH in "${INPUT_DIR}"/*/; do
                 -out "${PET_FLIRT}" \
                 -omat "${PET_AFFINE}"
         fi
+    done
+    
+    fslmerge \
+    	"${PET_TEMPLATE_4D}" \
+    	"${PET_PATH}"/*/"${PET_FLIRT}"
+    
+    fslmaths \
+    	"${PET_TEMPLATE_4D}" -Tmean \
+    	"${PET_TEMPLATE}"
 
-		# ---------- FNIRT (skip on failure) ----------
+		# ---------- FNIRT ----------
 		if [[ ! -f "${PET_FNIRT}" ]]; then
 			set +e
 			fnirt \
 				--in="${PET_3D}" \
-				--ref="${MNI_TEMPLATE}" \
+				--ref="${PET_TEMPLATE}" \
 				--aff="${PET_AFFINE}" \
 				--cout="${PET_WARP}" \
 				--iout="${PET_FNIRT}" \
