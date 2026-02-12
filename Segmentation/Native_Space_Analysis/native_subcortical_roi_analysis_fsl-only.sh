@@ -157,7 +157,9 @@ for SUB_DIR in "${BIDS_ROOT}"/sub-*; do
         safe_run "$SUB" "$SES" "FSLROI" fslroi "${DWI_PRE}" B0.nii.gz 0 1 || continue
         safe_run "$SUB" "$SES" "FLIRT_B0" flirt -in B0.nii.gz -ref T1.nii.gz -omat B0_to_T1.mat || continue
         safe_run "$SUB" "$SES" "INV_XFM" convert_xfm -omat T1_to_B0.mat -inverse B0_to_T1.mat || continue
-        safe_run "$SUB" "$SES" "GM_FLIRT" flirt -in synthstrip_seg_2.nii.gz -ref B0.nii.gz -applyxfm -init T1_to_B0.mat -interp nearestneighbour -out GM_B0.nii.gz || continue
+        safe_run "$SUB" "$SES" "GM_FLIRT" flirt -in synthstrip_seg_1.nii.gz -ref B0.nii.gz -applyxfm -init T1_to_B0.mat -interp nearestneighbour -out GM_B0.nii.gz || continue
+        safe_run "$SUB" "$SES" "GM_FLIRT" flirt -in synthstrip_seg_2.nii.gz -ref B0.nii.gz -applyxfm -init T1_to_B0.mat -interp nearestneighbour -out WM_B0.nii.gz || continue
+        safe_run "$SUB" "$SES" "GM_FLIRT" fslmaths GM_B0.nii.gz -add WM_B0.nii.gz mask_B0.nii.gz || continue
 
         #################################
         # ROI LOOP
@@ -174,7 +176,7 @@ for SUB_DIR in "${BIDS_ROOT}"/sub-*; do
             safe_run "$SUB" "$SES" "MESH_TO_VOL_${ROI}" first_utils --meshToVol -i "${SYNTHSTRIP_IMG}" -m "first-${ROI}_first.vtk" -r "${SYNTHSTRIP_IMG}" -l "${LABEL}" -o "${ROI}.nii.gz" || continue
             safe_run "$SUB" "$SES" "BIN_${ROI}" fslmaths "${ROI}.nii.gz" -bin "${ROI}.nii.gz" || continue
             safe_run "$SUB" "$SES" "FLIRT_ROI_${ROI}" flirt -in "${ROI}.nii.gz" -ref B0.nii.gz -applyxfm -init T1_to_B0.mat -interp nearestneighbour -out "${ROI}_B0.nii.gz" || continue
-            safe_run "$SUB" "$SES" "MASK_ROI_${ROI}" fslmaths "${ROI}_B0.nii.gz" -mul GM_B0.nii.gz "${ROI}_B0_masked.nii.gz" || continue
+            safe_run "$SUB" "$SES" "MASK_ROI_${ROI}" fslmaths "${ROI}_B0.nii.gz" -mul mask_B0.nii.gz "${ROI}_B0_masked.nii.gz" || continue
 
             # VOXEL STATS
             read VOX VOL <<< $(fslstats "${ROI}_B0_masked.nii.gz" -V) || { echo "${SUB},${SES},VOXEL_STATS_${ROI},FAILED" >> "${FAIL_LOG}"; continue; }
